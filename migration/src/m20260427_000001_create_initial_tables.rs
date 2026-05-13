@@ -1,0 +1,512 @@
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        // User Table
+        manager
+            .create_table(
+                Table::create()
+                    .table(User::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(User::Id).uuid().not_null().primary_key())
+                    .col(ColumnDef::new(User::Email).string().not_null().unique_key())
+                    .col(
+                        ColumnDef::new(User::Enabled)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
+                    .col(
+                        ColumnDef::new(User::Admin)
+                            .boolean()
+                            .not_null()
+                            .default(false),
+                    )
+                    .col(
+                        ColumnDef::new(User::TokenVersionAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(User::CreatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(User::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // OtpRecord Table
+        manager
+            .create_table(
+                Table::create()
+                    .table(OtpRecord::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(OtpRecord::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(OtpRecord::UserId).uuid().not_null())
+                    .col(ColumnDef::new(OtpRecord::Name).string().not_null())
+                    .col(
+                        ColumnDef::new(OtpRecord::ServiceIdentifier)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(OtpRecord::CreatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(OtpRecord::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-otprecord-user_id")
+                            .from(OtpRecord::Table, OtpRecord::UserId)
+                            .to(User::Table, User::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // ApiAccessToken Table
+        manager
+            .create_table(
+                Table::create()
+                    .table(ApiAccessToken::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(ApiAccessToken::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(ApiAccessToken::OtpRecordId)
+                            .uuid()
+                            .not_null(),
+                    )
+                    .col(
+                        ColumnDef::new(ApiAccessToken::TokenHash)
+                            .string()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(ColumnDef::new(ApiAccessToken::Name).string().not_null())
+                    .col(ColumnDef::new(ApiAccessToken::LastUsedAt).timestamp())
+                    .col(
+                        ColumnDef::new(ApiAccessToken::CreatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(ApiAccessToken::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-apiaccesstoken-otp_record_id")
+                            .from(ApiAccessToken::Table, ApiAccessToken::OtpRecordId)
+                            .to(OtpRecord::Table, OtpRecord::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // OtpRequest Table
+        manager
+            .create_table(
+                Table::create()
+                    .table(OtpRequest::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(OtpRequest::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(OtpRequest::OtpRecordId).uuid().not_null())
+                    .col(ColumnDef::new(OtpRequest::Status).integer().not_null())
+                    .col(ColumnDef::new(OtpRequest::OtpCode).string())
+                    .col(
+                        ColumnDef::new(OtpRequest::CreatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(OtpRequest::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-otprequest-otp_record_id")
+                            .from(OtpRequest::Table, OtpRequest::OtpRecordId)
+                            .to(OtpRecord::Table, OtpRecord::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // UserLimit Table
+        manager
+            .create_table(
+                Table::create()
+                    .table(UserLimit::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(UserLimit::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(
+                        ColumnDef::new(UserLimit::UserId)
+                            .uuid()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(
+                        ColumnDef::new(UserLimit::MaxOtpRecords)
+                            .integer()
+                            .not_null()
+                            .default(1),
+                    )
+                    .col(
+                        ColumnDef::new(UserLimit::MaxTokensPerRecord)
+                            .integer()
+                            .not_null()
+                            .default(3),
+                    )
+                    .col(
+                        ColumnDef::new(UserLimit::CreatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(UserLimit::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-userlimit-user_id")
+                            .from(UserLimit::Table, UserLimit::UserId)
+                            .to(User::Table, User::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // Device Table
+        manager
+            .create_table(
+                Table::create()
+                    .table(Device::Table)
+                    .if_not_exists()
+                    .col(ColumnDef::new(Device::Id).uuid().not_null().primary_key())
+                    .col(
+                        ColumnDef::new(Device::DeviceUuid)
+                            .uuid()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(ColumnDef::new(Device::FcmToken).string().not_null())
+                    .col(
+                        ColumnDef::new(Device::CreatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(Device::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // UserDevice Table (Binding)
+        manager
+            .create_table(
+                Table::create()
+                    .table(UserDevice::Table)
+                    .if_not_exists()
+                    .col(
+                        ColumnDef::new(UserDevice::Id)
+                            .uuid()
+                            .not_null()
+                            .primary_key(),
+                    )
+                    .col(ColumnDef::new(UserDevice::UserId).uuid().not_null())
+                    .col(
+                        ColumnDef::new(UserDevice::DeviceId)
+                            .uuid()
+                            .not_null()
+                            .unique_key(),
+                    )
+                    .col(
+                        ColumnDef::new(UserDevice::CreatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .col(
+                        ColumnDef::new(UserDevice::UpdatedAt)
+                            .timestamp()
+                            .not_null()
+                            .default(Expr::current_timestamp()),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-userdevice-user_id")
+                            .from(UserDevice::Table, UserDevice::UserId)
+                            .to(User::Table, User::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("fk-userdevice-device_id")
+                            .from(UserDevice::Table, UserDevice::DeviceId)
+                            .to(Device::Table, Device::Id)
+                            .on_delete(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
+
+        // Indexes
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-user-created_at")
+                    .table(User::Table)
+                    .col(User::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-otprecord-user_id")
+                    .table(OtpRecord::Table)
+                    .col(OtpRecord::UserId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-otprecord-created_at")
+                    .table(OtpRecord::Table)
+                    .col(OtpRecord::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-apiaccesstoken-otp_record_id")
+                    .table(ApiAccessToken::Table)
+                    .col(ApiAccessToken::OtpRecordId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-apiaccesstoken-token_hash")
+                    .table(ApiAccessToken::Table)
+                    .col(ApiAccessToken::TokenHash)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-apiaccesstoken-created_at")
+                    .table(ApiAccessToken::Table)
+                    .col(ApiAccessToken::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-otprequest-otp_record_id")
+                    .table(OtpRequest::Table)
+                    .col(OtpRequest::OtpRecordId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-otprequest-created_at")
+                    .table(OtpRequest::Table)
+                    .col(OtpRequest::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-device-created_at")
+                    .table(Device::Table)
+                    .col(Device::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-userdevice-user_id")
+                    .table(UserDevice::Table)
+                    .col(UserDevice::UserId)
+                    .to_owned(),
+            )
+            .await?;
+        manager
+            .create_index(
+                Index::create()
+                    .name("idx-userdevice-created_at")
+                    .table(UserDevice::Table)
+                    .col(UserDevice::CreatedAt)
+                    .to_owned(),
+            )
+            .await?;
+
+        Ok(())
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .drop_table(Table::drop().table(UserDevice::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(Device::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(UserLimit::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(OtpRequest::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(ApiAccessToken::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(OtpRecord::Table).to_owned())
+            .await?;
+        manager
+            .drop_table(Table::drop().table(User::Table).to_owned())
+            .await?;
+        Ok(())
+    }
+}
+
+#[derive(DeriveIden)]
+enum User {
+    Table,
+    Id,
+    Email,
+    Enabled,
+    Admin,
+    TokenVersionAt,
+    CreatedAt,
+    UpdatedAt,
+}
+#[derive(DeriveIden)]
+enum OtpRecord {
+    Table,
+    Id,
+    UserId,
+    Name,
+    ServiceIdentifier,
+    CreatedAt,
+    UpdatedAt,
+}
+#[derive(DeriveIden)]
+enum ApiAccessToken {
+    Table,
+    Id,
+    OtpRecordId,
+    TokenHash,
+    Name,
+    LastUsedAt,
+    CreatedAt,
+    UpdatedAt,
+}
+#[derive(DeriveIden)]
+enum OtpRequest {
+    Table,
+    Id,
+    OtpRecordId,
+    Status,
+    OtpCode,
+    CreatedAt,
+    UpdatedAt,
+}
+#[derive(DeriveIden)]
+enum UserLimit {
+    Table,
+    Id,
+    UserId,
+    MaxOtpRecords,
+    MaxTokensPerRecord,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum Device {
+    Table,
+    Id,
+    DeviceUuid,
+    FcmToken,
+    CreatedAt,
+    UpdatedAt,
+}
+
+#[derive(DeriveIden)]
+enum UserDevice {
+    Table,
+    Id,
+    UserId,
+    DeviceId,
+    CreatedAt,
+    UpdatedAt,
+}

@@ -1,0 +1,22 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Smartphone Frame -->
+    <path
+        android:fillColor="@color/brand_teal"
+        android:pathData="M34,24c-2.21,0 -4,1.79 -4,4v52c0,2.21 1.79,4 4,4h40c2.21,0 4,-1.79 4,-4V28c0,-2.21 -1.79,-4 -4,-4H34zM32,28c0,-1.1 0.9,-2 2,-2h40c1.1,0 2,0.9 2,2v52c0,1.1 -0.9,2 -2,2H34c-1.1,0 -2,-0.9 -2,-2V28z" />
+
+    <!-- Push Arrow -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,42l-8,8h5v12h6V50h5z" />
+
+    <!-- OTP Code Dots (4 digits) -->
+    <path
+        android:fillColor="@color/brand_teal"
+        android:pathData="M40,68h4v4h-4z M48,68h4v4h-4z M56,68h4v4h-4z M64,68h4v4h-4z" />
+
+</vector>
