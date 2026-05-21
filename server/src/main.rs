@@ -13,7 +13,7 @@ use axum::{Router, middleware, routing};
 use fcm_service::FcmService;
 use google_oauth::AsyncClient;
 use sea_orm::Database;
-use tokio::{net::TcpListener, time};
+use tokio::{net::TcpListener, signal, time};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -188,10 +188,37 @@ async fn run() -> Result<(), AppError> {
     });
 
     axum::serve(listener, app)
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .map_err(|e| AppError::StartupError {
             message: format!("Server error: {:#?}", e),
         })?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        signal::ctrl_c()
+            .await
+            .expect("failed to install Ctrl+C handler");
+    };
+
+    #[cfg(unix)]
+    let terminate = async {
+        signal::unix::signal(signal::unix::SignalKind::terminate())
+            .expect("failed to install signal handler")
+            .recv()
+            .await;
+    };
+
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+
+    tracing::info!("signal received, starting graceful shutdown");
 }
