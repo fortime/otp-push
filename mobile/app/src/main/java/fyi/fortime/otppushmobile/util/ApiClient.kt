@@ -1,6 +1,7 @@
 package fyi.fortime.otppushmobile.util
 
 import android.content.Context
+import android.util.Log
 import android.widget.Toast
 import fyi.fortime.otppushmobile.data.AuthResponse
 import fyi.fortime.otppushmobile.data.PersistentStore
@@ -28,6 +29,8 @@ val sharedHttpClient = HttpClient {
     }
 }
 
+private const val LOG_TAG = "ApiClient"
+
 private val refreshMutex = Mutex()
 
 // Data class to parse the common error response from the backend
@@ -40,6 +43,7 @@ suspend fun HttpResponse.getErrorMessage(): String {
         val errorBody: ErrorResponse = this.body()
         errorBody.error
     } catch (e: Exception) {
+        Log.w(LOG_TAG, "failed to deserialize error: $e")
         "Error: ${this.status}"
     }
 }
@@ -59,31 +63,33 @@ suspend fun <T> HttpClient.safeApiCall(
 
         val response: HttpResponse = this.request(builder)
 
-        if (response.status == successCode) {
-            // Check for renewal signal
-            if (response.headers["X-Renew-Token"] == "true") {
-                // Pass the token used in THIS request to the refresh function
-                // to handle race conditions correctly inside the mutex.
-                if (tokenUsedInThisRequest != null) {
+        when (response.status) {
+            successCode -> {
+                // Check for renewal signal
+                if (response.headers["X-Renew-Token"] == "true") {
+                    // Pass the token used in THIS request to the refresh function
+                    // to handle race conditions correctly inside the mutex.
                     refreshToken(this@safeApiCall, persistentStore, tokenUsedInThisRequest)
                 }
-            }
 
-            try {
-                return serializer(response)
-            } catch (e: Exception) {
-                Toast.makeText(context, "Unexpected response: ${e.message}", Toast.LENGTH_LONG)
-                    .show()
+                try {
+                    return serializer(response)
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Unexpected response: ${e.message}", Toast.LENGTH_LONG)
+                        .show()
+                    return null
+                }
+            }
+            HttpStatusCode.Unauthorized -> {
+                onUnauthorized()
+                Toast.makeText(context, "Session expired", Toast.LENGTH_SHORT).show()
                 return null
             }
-        } else if (response.status == HttpStatusCode.Unauthorized) {
-            onUnauthorized()
-            Toast.makeText(context, "Session expired", Toast.LENGTH_SHORT).show()
-            return null
-        } else {
-            val errorMessage = response.getErrorMessage()
-            Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
-            return null
+            else -> {
+                val errorMessage = response.getErrorMessage()
+                Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
+                return null
+            }
         }
     } catch (e: Exception) {
         Toast.makeText(context, "Network error: ${e.message}", Toast.LENGTH_SHORT).show()
@@ -91,7 +97,7 @@ suspend fun <T> HttpClient.safeApiCall(
     }
 }
 
-private suspend fun refreshToken(client: HttpClient, persistentStore: PersistentStore, usedToken: String) {
+private suspend fun refreshToken(client: HttpClient, persistentStore: PersistentStore, usedToken: String?) {
     refreshMutex.withLock {
         val currentToken = persistentStore.getToken()
         
@@ -113,6 +119,7 @@ private suspend fun refreshToken(client: HttpClient, persistentStore: Persistent
                 persistentStore.saveToken(authResponse.access_token)
             }
         } catch (e: Exception) {
+            Log.w(LOG_TAG, "failed to refresh token, error: $e")
             // Silent failure, next request will retry or fail
         }
     }
