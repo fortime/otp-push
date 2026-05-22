@@ -18,6 +18,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TopAppBar
@@ -27,12 +28,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import fyi.fortime.otppushmobile.data.PersistentStore
 import fyi.fortime.otppushmobile.data.SubmitOtpRequest
 import fyi.fortime.otppushmobile.util.safeApiCall
@@ -84,12 +88,32 @@ fun OtpSubmissionScreen(
                 .padding(horizontal = 16.dp)
         ) {
             if (currentRequestId != null) {
-                Text("Awaiting OTP for request:", style = MaterialTheme.typography.bodySmall)
-                Text(
-                    "#${currentRequestId.takeLast(6)}",
-                    style = MaterialTheme.typography.headlineMedium,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "Awaiting OTP for Request",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Surface(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    ) {
+                        Text(
+                            text = "#${currentRequestId.takeLast(6)}",
+                            style = MaterialTheme.typography.displayLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 2.sp
+                            ),
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+                        )
+                    }
+                }
             } else {
                 Text(
                     "Waiting for incoming requests...",
