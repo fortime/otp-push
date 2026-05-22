@@ -3,6 +3,7 @@ package fyi.fortime.otppushmobile.data
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import fyi.fortime.otppushmobile.BuildConfig
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
@@ -17,7 +18,7 @@ class PersistentStore(context: Context) {
         private const val SERVER_URL_KEY = "server_url"
         private const val DEVICE_UUID_KEY = "device_uuid"
         private const val IS_DEVICE_CREATED_KEY = "is_device_created"
-        private const val DEFAULT_URL = "http://10.0.2.2:3000"
+        private val DEFAULT_URL = BuildConfig.DEFAULT_SERVER_URL
     }
 
     fun saveToken(token: String) {
