@@ -18,7 +18,7 @@ class PersistentStore(context: Context) {
         private const val SERVER_URL_KEY = "server_url"
         private const val DEVICE_UUID_KEY = "device_uuid"
         private const val IS_DEVICE_CREATED_KEY = "is_device_created"
-        private val DEFAULT_URL = BuildConfig.DEFAULT_SERVER_URL
+        private const val DEFAULT_URL = BuildConfig.DEFAULT_SERVER_URL
     }
 
     fun saveToken(token: String) {

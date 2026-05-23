@@ -36,8 +36,7 @@ import androidx.compose.ui.unit.dp
 fun OtpFillScreen(
     otpRecordName: String?,
     serviceIdentifier: String?,
-    onBack: () -> Unit,
-    modifier: Modifier = Modifier
+    onBack: () -> Unit
 ) {
     var accountName by remember { mutableStateOf("") }
     var otpCode by remember { mutableStateOf("") }

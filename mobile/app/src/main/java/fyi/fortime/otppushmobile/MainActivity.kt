@@ -6,9 +6,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -17,8 +14,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import fyi.fortime.otppushmobile.data.OtpRecordDto
+import fyi.fortime.otppushmobile.data.OtpRequestDto
 import fyi.fortime.otppushmobile.data.PersistentStore
 import fyi.fortime.otppushmobile.ui.screens.LoginScreen
 import fyi.fortime.otppushmobile.ui.screens.MainContainerScreen
@@ -50,33 +48,24 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             OtpPushMobileTheme {
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    MainApp(
-                        modifier = Modifier.padding(innerPadding),
-                        initialRequestId = pendingRequestId
-                    )
-                }
+                MainApp(
+                    initialRequestId = pendingRequestId
+                )
             }
         }
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        val requestId = intent.getStringExtra("request_id")
-        if (requestId != null) {
-            // How to propagate this to MainApp?
-            // Re-creating the setContent is one way, or use a state
-            // Let's just handle it via an event or update state if possible
-        }
     }
 
     @Composable
-    fun MainApp(modifier: Modifier = Modifier, initialRequestId: String? = null) {
+    fun MainApp(initialRequestId: String? = null) {
         val context = LocalContext.current
         var isLoggedIn by remember { mutableStateOf(persistentStore.getToken() != null) }
         var currentUser by remember { mutableStateOf(persistentStore.getUser()) }
         var selectedOtpRequest by remember {
-            mutableStateOf<fyi.fortime.otppushmobile.data.OtpRequestDto?>(
+            mutableStateOf<OtpRequestDto?>(
                 null
             )
         }
@@ -94,7 +83,7 @@ class MainActivity : ComponentActivity() {
                             header("Authorization", "Bearer $token")
                         },
                         onUnauthorized = { /* handle logout */ },
-                        serializer = { response -> response.body<fyi.fortime.otppushmobile.data.OtpRequestDto>() }
+                        serializer = { response -> response.body<OtpRequestDto>() }
                     )?.let { request ->
                         selectedOtpRequest = request
                     }
@@ -102,12 +91,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         var selectedOtpRecord by remember {
-            mutableStateOf<fyi.fortime.otppushmobile.data.OtpRecordDto?>(
+            mutableStateOf<OtpRecordDto?>(
                 null
             )
         }
         var fillOtpRecord by remember {
-            mutableStateOf<fyi.fortime.otppushmobile.data.OtpRecordDto?>(
+            mutableStateOf<OtpRecordDto?>(
                 null
             )
         }
@@ -118,12 +107,11 @@ class MainActivity : ComponentActivity() {
             val token = persistentStore.getToken()
             val baseUrl = persistentStore.getServerUrl()
             val deviceId = persistentStore.getDeviceUuid()
-            val ctx = context
 
             if (token != null) {
                 scope.launch {
                     client.safeApiCall(
-                        context = ctx,
+                        context = context,
                         builder = {
                             method = HttpMethod.Delete
                             url("$baseUrl/api/mobile/logout")
@@ -144,6 +132,22 @@ class MainActivity : ComponentActivity() {
             selectedOtpRecord = null
             fillOtpRecord = null
             selectedTab = 0
+        }
+
+        fun setSelectedOtpRecord(r: OtpRecordDto?) {
+            selectedOtpRecord = r
+        }
+
+        fun setFillOtpRecord(r: OtpRecordDto?) {
+            fillOtpRecord = r
+        }
+
+        fun setSelectedOtpRequest(r: OtpRequestDto?) {
+            selectedOtpRequest = r
+        }
+
+        fun setSelectedTab(t: Int) {
+            selectedTab = t
         }
 
         // Fetch user info on startup if missing
@@ -180,7 +184,7 @@ class MainActivity : ComponentActivity() {
             )
         } else if (selectedOtpRequest != null) {
             BackHandler {
-                selectedOtpRequest = null
+                setSelectedOtpRequest(null)
             }
             OtpSubmissionScreen(
                 client = client,
@@ -189,29 +193,28 @@ class MainActivity : ComponentActivity() {
                 otpRecordName = selectedOtpRequest!!.otp_record_name,
                 serviceIdentifier = selectedOtpRequest!!.service_identifier,
                 onUnauthorized = { handleLogout() },
-                onBack = { selectedOtpRequest = null },
-                onSuccess = { selectedOtpRequest = null },
-                modifier = modifier
+                onBack = { setSelectedOtpRequest(null) },
+                onSuccess = { setSelectedOtpRequest(null) }
             )
         } else if (fillOtpRecord != null) {
             BackHandler {
-                fillOtpRecord = null
+                setFillOtpRecord(null)
             }
             OtpFillScreen(
                 otpRecordName = fillOtpRecord!!.name,
                 serviceIdentifier = fillOtpRecord!!.service_identifier,
-                onBack = { fillOtpRecord = null }
+                onBack = { setFillOtpRecord(null) }
             )
         } else if (selectedOtpRecord != null) {
             BackHandler {
-                selectedOtpRecord = null
+                setSelectedOtpRecord(null)
             }
             OtpRecordTokensScreen(
                 client = client,
                 persistentStore = persistentStore,
-                otpRecordId = selectedOtpRecord!!.id.toString(),
+                otpRecordId = selectedOtpRecord!!.id,
                 otpRecordName = selectedOtpRecord!!.name,
-                onBack = { selectedOtpRecord = null },
+                onBack = { setSelectedOtpRecord(null) },
                 onUnauthorized = { handleLogout() }
             )
         } else {
@@ -220,10 +223,10 @@ class MainActivity : ComponentActivity() {
                 persistentStore = persistentStore,
                 currentUser = currentUser,
                 selectedTab = selectedTab,
-                onTabSelected = { selectedTab = it },
-                onSelectRequest = { request -> selectedOtpRequest = request },
-                onSelectOtpRecord = { record -> selectedOtpRecord = record },
-                onFillOtpRecord = { record -> fillOtpRecord = record },
+                onTabSelected = { setSelectedTab(it) },
+                onSelectRequest = { setSelectedOtpRequest(it) },
+                onSelectOtpRecord = { setSelectedOtpRecord(it) },
+                onFillOtpRecord = { setFillOtpRecord(it) },
                 onUnauthorized = { handleLogout() },
                 onLogout = { handleLogout() }
             )

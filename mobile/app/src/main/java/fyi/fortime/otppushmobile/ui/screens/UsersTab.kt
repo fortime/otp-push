@@ -68,6 +68,14 @@ fun UsersTab(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
+    fun setRefreshing(r: Boolean) {
+        isRefreshing = r
+    }
+
+    fun setSelectedUser(u: UserDto?) {
+        selectedUser = u
+    }
+
     suspend fun fetchUsers() {
         isLoading = true
         val token = persistentStore.getToken() ?: return onUnauthorized()
@@ -96,9 +104,9 @@ fun UsersTab(
         isRefreshing = isRefreshing,
         onRefresh = {
             scope.launch {
-                isRefreshing = true
+                setRefreshing(true)
                 fetchUsers()
-                isRefreshing = false
+                setRefreshing(false)
             }
         },
         modifier = Modifier.fillMaxSize()
@@ -145,7 +153,7 @@ fun UsersTab(
             client = client,
             persistentStore = persistentStore,
             user = selectedUser!!,
-            onDismiss = { selectedUser = null },
+            onDismiss = { setSelectedUser(null) },
             onUnauthorized = onUnauthorized,
             onSave = onSave@{ userDto, enabled, admin, limits, maxRecordsStr, maxTokensStr ->
                 val maxRecords = maxRecordsStr.toIntOrNull() ?: return@onSave
@@ -211,7 +219,7 @@ fun UsersTab(
                         ) ?: return@launch
                     }
 
-                    selectedUser = null
+                    setSelectedUser(null)
                     fetchUsers()
                 }
             }

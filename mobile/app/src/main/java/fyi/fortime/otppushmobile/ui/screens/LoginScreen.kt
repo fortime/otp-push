@@ -55,7 +55,6 @@ fun LoginScreen(
     onLoginSuccess: (UserDto) -> Unit
 ) {
     var serverUrlInput by remember { mutableStateOf(persistentStore.getServerUrl()) }
-    var googleClientId by remember { mutableStateOf<String?>(null) }
     var isLoadingConfig by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
@@ -97,8 +96,6 @@ fun LoginScreen(
                         isLoadingConfig = false
 
                         if (config != null) {
-                            googleClientId = config.google_client_id
-
                             try {
                                 val googleIdOption = GetGoogleIdOption.Builder()
                                     .setFilterByAuthorizedAccounts(false)

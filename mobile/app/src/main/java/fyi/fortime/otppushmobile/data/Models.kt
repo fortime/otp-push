@@ -1,3 +1,5 @@
+@file:Suppress("PropertyName")
+
 package fyi.fortime.otppushmobile.data
 
 import kotlinx.serialization.Serializable

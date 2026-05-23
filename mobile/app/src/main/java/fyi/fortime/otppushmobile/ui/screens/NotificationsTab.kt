@@ -60,6 +60,10 @@ fun NotificationsTab(
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
+    fun setRefreshing(b: Boolean) {
+        isRefreshing = b
+    }
+
     suspend fun fetchData(reset: Boolean = false) {
         if (isLoading || (!hasMore && !reset)) return
         isLoading = true
@@ -81,10 +85,10 @@ fun NotificationsTab(
             onUnauthorized = onUnauthorized,
             serializer = { it.body<PaginatedResponse<OtpRequestDto>>() }
         )?.let { paginated ->
-            if (reset) {
-                items = paginated.items
+            items = if (reset) {
+                paginated.items
             } else {
-                items = items + paginated.items
+                items + paginated.items
             }
             hasMore = items.size < paginated.total
             page++
@@ -114,9 +118,9 @@ fun NotificationsTab(
         isRefreshing = isRefreshing,
         onRefresh = {
             scope.launch {
-                isRefreshing = true
+                setRefreshing(true)
                 fetchData(reset = true)
-                isRefreshing = false
+                setRefreshing(false)
             }
         },
         modifier = Modifier.fillMaxSize()

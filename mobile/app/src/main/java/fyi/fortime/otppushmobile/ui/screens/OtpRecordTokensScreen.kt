@@ -77,6 +77,14 @@ fun OtpRecordTokensScreen(
     var showAddDialog by remember { mutableStateOf(false) }
     var createdTokenResponse by remember { mutableStateOf<CreateTokenResponse?>(null) }
 
+    fun setShowAddDialog(b: Boolean) {
+        showAddDialog = b
+    }
+
+    fun setCreatedTokenResponse(r: CreateTokenResponse?) {
+        createdTokenResponse = r
+    }
+
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
@@ -206,7 +214,7 @@ fun OtpRecordTokensScreen(
     if (showAddDialog) {
         var name by remember { mutableStateOf("") }
         AlertDialog(
-            onDismissRequest = { showAddDialog = false },
+            onDismissRequest = { setShowAddDialog(false) },
             title = { Text("Create API Token") },
             text = {
                 OutlinedTextField(
@@ -235,7 +243,7 @@ fun OtpRecordTokensScreen(
                             serializer = { it.body<CreateTokenResponse>() }
                         )?.let { response ->
                             createdTokenResponse = response
-                            showAddDialog = false
+                            setShowAddDialog(false)
                             fetchTokens()
                         }
                     }
@@ -244,7 +252,7 @@ fun OtpRecordTokensScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showAddDialog = false }) {
+                TextButton(onClick = { setShowAddDialog(false) }) {
                     Text("Cancel")
                 }
             }
@@ -255,7 +263,7 @@ fun OtpRecordTokensScreen(
         val currentCreatedToken = createdTokenResponse!!
         val clipboardManager = LocalClipboard.current
         AlertDialog(
-            onDismissRequest = { createdTokenResponse = null },
+            onDismissRequest = { setCreatedTokenResponse(null) },
             title = { Text("Token Created") },
             text = {
                 Column {
@@ -293,7 +301,7 @@ fun OtpRecordTokensScreen(
                 }
             },
             confirmButton = {
-                Button(onClick = { createdTokenResponse = null }) {
+                Button(onClick = { setCreatedTokenResponse(null) }) {
                     Text("Done")
                 }
             }

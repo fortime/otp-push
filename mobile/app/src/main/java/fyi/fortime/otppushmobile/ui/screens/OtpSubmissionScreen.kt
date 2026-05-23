@@ -61,8 +61,7 @@ fun OtpSubmissionScreen(
     serviceIdentifier: String?,
     onUnauthorized: () -> Unit,
     onBack: () -> Unit,
-    onSuccess: () -> Unit,
-    modifier: Modifier = Modifier
+    onSuccess: () -> Unit
 ) {
     var accountName by remember { mutableStateOf("") }
     var otpCode by remember { mutableStateOf("") }

@@ -80,11 +80,13 @@ suspend fun <T> HttpClient.safeApiCall(
                     return null
                 }
             }
+
             HttpStatusCode.Unauthorized -> {
                 onUnauthorized()
                 Toast.makeText(context, "Session expired", Toast.LENGTH_SHORT).show()
                 return null
             }
+
             else -> {
                 val errorMessage = response.getErrorMessage()
                 Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
@@ -97,10 +99,14 @@ suspend fun <T> HttpClient.safeApiCall(
     }
 }
 
-private suspend fun refreshToken(client: HttpClient, persistentStore: PersistentStore, usedToken: String?) {
+private suspend fun refreshToken(
+    client: HttpClient,
+    persistentStore: PersistentStore,
+    usedToken: String?
+) {
     refreshMutex.withLock {
         val currentToken = persistentStore.getToken()
-        
+
         // If the token in the store is already different from the one used in the 
         // request that triggered this call, it means another thread already refreshed it.
         if (currentToken != usedToken || currentToken == null) return
