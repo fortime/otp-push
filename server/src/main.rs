@@ -104,6 +104,10 @@ async fn run() -> Result<(), AppError> {
             routing::post(handlers::otp_records::create_otp_record),
         )
         .route(
+            "/otp-records/:id",
+            routing::delete(handlers::otp_records::delete_otp_record),
+        )
+        .route(
             "/otp-records/:id/tokens",
             routing::get(handlers::otp_records::list_api_tokens),
         )

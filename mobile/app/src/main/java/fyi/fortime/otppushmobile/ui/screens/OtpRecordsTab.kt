@@ -14,13 +14,16 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -71,6 +74,7 @@ fun OtpRecordsTab(
     var isLoading by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
+    var recordToDelete by remember { mutableStateOf<OtpRecordDto?>(null) }
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -78,6 +82,10 @@ fun OtpRecordsTab(
 
     fun setShowAddDialog(b: Boolean) {
         showAddDialog = b
+    }
+
+    fun setRecordToDelete(r: OtpRecordDto?) {
+        recordToDelete = r
     }
 
     suspend fun fetchData(reset: Boolean = false) {
@@ -179,12 +187,25 @@ fun OtpRecordsTab(
                                 )
                             }
 
-                            Button(
-                                onClick = { onFillRecord(item) },
-                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp),
-                                modifier = Modifier.height(32.dp)
-                            ) {
-                                Text("Fill", style = MaterialTheme.typography.labelMedium)
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Button(
+                                    onClick = { onFillRecord(item) },
+                                    contentPadding = PaddingValues(
+                                        horizontal = 12.dp,
+                                        vertical = 0.dp
+                                    ),
+                                    modifier = Modifier.height(32.dp)
+                                ) {
+                                    Text("Fill", style = MaterialTheme.typography.labelMedium)
+                                }
+
+                                IconButton(onClick = { recordToDelete = item }) {
+                                    Icon(
+                                        Icons.Default.Delete,
+                                        contentDescription = "Delete",
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }
@@ -211,6 +232,48 @@ fun OtpRecordsTab(
         ) {
             Icon(Icons.Default.Add, contentDescription = "Add Record")
         }
+    }
+
+    if (recordToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { setRecordToDelete(null) },
+            title = { Text("Delete OTP Record") },
+            text = { Text("Are you sure you want to delete '${recordToDelete?.name}'? This will also delete all associated API tokens.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val record = recordToDelete ?: return@Button
+                        scope.launch {
+                            val token = persistentStore.getToken() ?: return@launch onUnauthorized()
+                            val baseUrl = persistentStore.getServerUrl()
+
+                            client.safeApiCall(
+                                context = context,
+                                builder = {
+                                    method = HttpMethod.Delete
+                                    url("$baseUrl/api/otp-records/${record.id}")
+                                    header("Authorization", "Bearer $token")
+                                },
+                                onUnauthorized = onUnauthorized,
+                                successCode = HttpStatusCode.NoContent,
+                                serializer = { /* no body */ }
+                            )?.let {
+                                fetchData(reset = true)
+                                setRecordToDelete(null)
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { setRecordToDelete(null) }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 
     if (showAddDialog) {

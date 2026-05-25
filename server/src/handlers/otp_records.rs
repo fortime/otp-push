@@ -259,3 +259,17 @@ pub async fn delete_api_token(
 
     Ok(StatusCode::NO_CONTENT)
 }
+
+pub async fn delete_otp_record(
+    State(state): State<SharedState>,
+    auth: AuthUser,
+    Path(record_id): Path<Uuid>,
+) -> Result<StatusCode, AppError> {
+    otp_record::Entity::delete_many()
+        .filter(otp_record::Column::Id.eq(record_id))
+        .filter(otp_record::Column::UserId.eq(auth.user.id))
+        .exec(&state.db)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
+}
