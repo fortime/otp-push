@@ -76,6 +76,10 @@ fun OtpRecordsTab(
     val context = LocalContext.current
     val listState = rememberLazyListState()
 
+    fun setShowAddDialog(b: Boolean) {
+        showAddDialog = b
+    }
+
     suspend fun fetchData(reset: Boolean = false) {
         if (isLoading || (!hasMore && !reset)) return
         isLoading = true
@@ -200,7 +204,7 @@ fun OtpRecordsTab(
         }
 
         FloatingActionButton(
-            onClick = { showAddDialog = true },
+            onClick = { setShowAddDialog(true) },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
@@ -211,7 +215,7 @@ fun OtpRecordsTab(
 
     if (showAddDialog) {
         AddOtpRecordDialog(
-            onDismiss = { },
+            onDismiss = { setShowAddDialog(false) },
             onConfirm = { name, identifier ->
                 scope.launch {
                     val token = persistentStore.getToken() ?: return@launch onUnauthorized()
@@ -231,6 +235,7 @@ fun OtpRecordsTab(
                         serializer = { /* no body */ }
                     )?.let {
                         fetchData(reset = true)
+                        setShowAddDialog(false)
                     }
                 }
             }
