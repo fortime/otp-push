@@ -163,18 +163,17 @@ fun OtpRecordTokensScreen(
                                         style = MaterialTheme.typography.bodyMedium,
                                         color = MaterialTheme.colorScheme.secondary
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { // For dates
+                                    Text(
+                                        "Created: ${apiToken.created_at}",
+                                        style = MaterialTheme.typography.labelSmall
+                                    )
+                                    apiToken.last_used_at?.let {
                                         Text(
-                                            "Created: ${apiToken.created_at}",
+                                            "Last used: $it",
                                             style = MaterialTheme.typography.labelSmall
                                         )
-                                        apiToken.last_used_at?.let {
-                                            Text(
-                                                "Last used: $it",
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
                                     }
+
                                 }
                                 // Right side for delete button
                                 IconButton(onClick = {
