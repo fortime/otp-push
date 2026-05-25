@@ -125,7 +125,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            persistentStore.clearToken()
+            persistentStore.clearCredentials()
             isLoggedIn = false
             selectedOtpRequest = null
             currentUser = null

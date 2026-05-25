@@ -57,7 +57,7 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
                         setBody(UpdateFcmTokenRequest(device_id = deviceUuid, fcm_token = token))
                     },
                     onUnauthorized = {
-                        persistentStore.clearToken()
+                        persistentStore.clearCredentials()
                     },
                     serializer = { }
                 )

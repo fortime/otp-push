@@ -82,7 +82,7 @@ class PersistentStore(context: Context) {
         }
     }
 
-    fun clearToken() {
+    fun clearCredentials() {
         prefs.edit { remove(TOKEN_KEY).remove(USER_KEY).remove(OTP_RECORDS_CACHE_KEY) }
     }
 
