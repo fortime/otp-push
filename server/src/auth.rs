@@ -139,10 +139,9 @@ pub async fn auth_middleware(
             .extensions()
             .get::<SuppressTokenRenewal>()
             .is_none()
+        && let Ok(value) = "true".parse()
     {
-        if let Ok(value) = "true".parse() {
-            response.headers_mut().insert("X-Renew-Token", value);
-        }
+        response.headers_mut().insert("X-Renew-Token", value);
     }
 
     Ok(response)

@@ -3,7 +3,7 @@ use chrono::Utc;
 use common::{AuthConfig, AuthResponse, GoogleAuthRequest, UserDto};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DbErr, EntityTrait, QueryFilter, QueryOrder,
-    TransactionTrait, sea_query::OnConflict,
+    QuerySelect, TransactionTrait, sea_query::OnConflict,
 };
 use uuid::Uuid;
 
@@ -79,7 +79,6 @@ pub async fn auth_google(
                         fcm_token: ActiveValue::Set(fcm),
                         created_at: ActiveValue::Set(Utc::now()),
                         updated_at: ActiveValue::Set(Utc::now()),
-                        ..Default::default()
                     };
                     match device::Entity::insert(new_device)
                         .on_conflict(
@@ -134,35 +133,40 @@ pub async fn auth_google(
                         device_id: ActiveValue::Set(device_record.id),
                         created_at: ActiveValue::Set(Utc::now()),
                         updated_at: ActiveValue::Set(Utc::now()),
-                        ..Default::default()
                     };
                     new_binding.insert(txn).await?;
 
                     // 3. Enforce 3-device limit
-                    let bindings = user_device::Entity::find()
+                    let mut bindings = user_device::Entity::find()
                         .filter(user_device::Column::UserId.eq(user_id))
                         .order_by_asc(user_device::Column::UpdatedAt)
+                        .select_only()
+                        .column(user_device::Column::Id)
+                        .into_tuple::<(Uuid,)>()
                         .all(txn)
                         .await?;
 
-                    if bindings.len() > 3 {
-                        let to_remove = bindings.len() - 3;
-                        for i in 0..to_remove {
-                            user_device::Entity::delete_by_id(bindings[i].id)
-                                .exec(txn)
-                                .await?;
-                        }
+                    bindings.truncate(bindings.len().saturating_sub(3));
+
+                    if !bindings.is_empty() {
+                        user_device::Entity::delete_many()
+                            .filter(user_device::Column::Id.is_in(bindings.iter().map(|b| b.0)))
+                            .exec(txn)
+                            .await?;
+                        tracing::info!(
+                            "Removed out-of-limit older user device bindings: {bindings:?}"
+                        );
                     }
                 }
 
                 // 4. Update FCM token (only if bound to THIS user, which we just ensured)
-                if let Some(fcm) = fcm_token {
-                    if device_record.fcm_token != fcm {
-                        let mut active_device: device::ActiveModel = device_record.into();
-                        active_device.fcm_token = ActiveValue::Set(fcm);
-                        active_device.updated_at = ActiveValue::Set(Utc::now());
-                        active_device.update(txn).await?;
-                    }
+                if let Some(fcm) = fcm_token
+                    && device_record.fcm_token != fcm
+                {
+                    let mut active_device: device::ActiveModel = device_record.into();
+                    active_device.fcm_token = ActiveValue::Set(fcm);
+                    active_device.updated_at = ActiveValue::Set(Utc::now());
+                    active_device.update(txn).await?;
                 }
 
                 Ok(())

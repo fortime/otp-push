@@ -100,10 +100,10 @@ pub async fn wait_for_otp(
         });
     }
 
-    if request.status == OtpRequestStatus::Completed as i32 {
-        if let Some(code) = request.otp_code {
-            return Ok(Some(code));
-        }
+    if request.status == OtpRequestStatus::Completed as i32
+        && let Some(code) = request.otp_code
+    {
+        return Ok(Some(code));
     }
 
     let waiter = state.waiter_manager.new_waiter(request_id);

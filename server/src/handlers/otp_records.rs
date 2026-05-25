@@ -85,7 +85,6 @@ pub async fn create_otp_record(
         service_identifier: ActiveValue::Set(payload.service_identifier),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
-        ..Default::default()
     };
 
     let result = new_record.insert(&state.db).await?;

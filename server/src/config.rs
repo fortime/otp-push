@@ -65,7 +65,7 @@ fn default_retention_days() -> i64 {
 }
 
 impl Config {
-    pub fn load() -> Result<Self, Error> {
+    pub fn load() -> Result<Self, Box<Error>> {
         let args = CliArgs::parse();
 
         let mut figment = Figment::new();
@@ -81,6 +81,6 @@ impl Config {
         // We use serialized CLI args to figment
         figment = figment.merge(Serialized::defaults(&args));
 
-        figment.extract()
+        figment.extract().map_err(Box::from)
     }
 }
