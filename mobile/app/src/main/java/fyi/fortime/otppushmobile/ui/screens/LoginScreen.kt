@@ -31,13 +31,16 @@ import androidx.credentials.exceptions.GetCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.messaging.FirebaseMessaging
+import fyi.fortime.otppushmobile.BuildConfig
 import fyi.fortime.otppushmobile.data.AuthResponse
 import fyi.fortime.otppushmobile.data.GoogleAuthRequest
 import fyi.fortime.otppushmobile.data.PersistentStore
 import fyi.fortime.otppushmobile.data.UserDto
+import fyi.fortime.otppushmobile.util.MockJwt
 import fyi.fortime.otppushmobile.util.safeApiCall
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
 import io.ktor.http.ContentType.Application
@@ -56,6 +59,10 @@ fun LoginScreen(
 ) {
     var serverUrlInput by remember { mutableStateOf(persistentStore.getServerUrl()) }
     var isLoadingConfig by remember { mutableStateOf(false) }
+
+    var showMockLogin by remember { mutableStateOf(false) }
+    var mockUserId by remember { mutableStateOf("") }
+    var mockSecret by remember { mutableStateOf("") }
 
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
@@ -143,6 +150,87 @@ fun LoginScreen(
             ) {
                 Text("Login with Google")
             }
+        }
+
+        if (BuildConfig.MOCK_LOGIN) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Button(
+                onClick = { showMockLogin = !showMockLogin },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (showMockLogin) "Hide Mock Login" else "Show Mock Login")
+            }
+
+            if (showMockLogin) {
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = mockUserId,
+                    onValueChange = { mockUserId = it },
+                    label = { Text("Mock User ID (UUID)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = mockSecret,
+                    onValueChange = { mockSecret = it },
+                    label = { Text("Mock JWT Secret") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(
+                    onClick = {
+                        try {
+                            val token = MockJwt.createToken(mockUserId, mockSecret)
+                            performMockLogin(
+                                scope,
+                                client,
+                                persistentStore,
+                                context,
+                                token,
+                                onLoginSuccess
+                            )
+                        } catch (e: Exception) {
+                            Log.e("Auth", "Mock login error", e)
+                            Toast.makeText(context, "Mock Login failed: ${e.message}", Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Mock Login")
+                }
+            }
+        }
+    }
+}
+
+private fun performMockLogin(
+    scope: CoroutineScope,
+    client: HttpClient,
+    persistentStore: PersistentStore,
+    context: Context,
+    token: String,
+    onSuccess: (UserDto) -> Unit
+) {
+    scope.launch {
+        val baseUrl = persistentStore.getServerUrl()
+        persistentStore.saveToken(token)
+
+        val user = client.safeApiCall(
+            context = context,
+            builder = {
+                method = HttpMethod.Get
+                url("$baseUrl/api/users/me")
+                header("Authorization", "Bearer $token")
+            },
+            onUnauthorized = {
+                persistentStore.clearCredentials()
+            },
+            serializer = { it.body<UserDto>() }
+        )
+
+        if (user != null) {
+            persistentStore.saveUser(user)
+            onSuccess(user)
         }
     }
 }

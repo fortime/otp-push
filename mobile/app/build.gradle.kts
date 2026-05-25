@@ -20,6 +20,9 @@ android {
 
         val defaultUrl = project.findProperty("defaultServerUrl") ?: "http://10.0.2.2:3000"
         buildConfigField("String", "DEFAULT_SERVER_URL", "\"$defaultUrl\"")
+
+        val mockLogin = (project.findProperty("mockLogin") ?: "false").toString().toBoolean()
+        buildConfigField("Boolean", "MOCK_LOGIN", mockLogin.toString())
     }
 
     buildTypes {
