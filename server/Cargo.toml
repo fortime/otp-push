@@ -3,6 +3,10 @@ name = "server"
 version = "0.1.1"
 edition = "2024"
 
+[dev-dependencies]
+base64.workspace = true
+openssl.workspace = true
+
 [dependencies]
 axum.workspace = true
 tokio.workspace = true
@@ -22,4 +26,5 @@ figment.workspace = true
 clap.workspace = true
 serde_with.workspace = true
 google-oauth.workspace = true
-fcm-service = "0.2.3"
+fcm-service.workspace = true
+spki.workspace = true

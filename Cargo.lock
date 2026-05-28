@@ -2763,6 +2763,7 @@ name = "server"
 version = "0.1.1"
 dependencies = [
  "axum",
+ "base64",
  "chrono",
  "clap",
  "common",
@@ -2770,12 +2771,14 @@ dependencies = [
  "figment",
  "google-oauth",
  "jsonwebtoken",
+ "openssl",
  "reqwest",
  "sea-orm",
  "serde",
  "serde_json",
  "serde_with",
  "snafu",
+ "spki",
  "tokio",
  "tower-http 0.5.2",
  "tracing",

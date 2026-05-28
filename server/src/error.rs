@@ -34,6 +34,9 @@ pub enum AppError {
     #[snafu(display("Limit exceeded: {message}"))]
     LimitExceeded { message: String },
 
+    #[snafu(display("Bad request: {message}"))]
+    BadRequest { message: String },
+
     #[snafu(display("Internal server error: {message}"))]
     Internal { message: String },
 
@@ -71,6 +74,10 @@ impl IntoResponse for AppError {
             AppError::LimitExceeded { message } => {
                 tracing::warn!("Limit exceeded: {}", message);
                 (StatusCode::CONFLICT, message.clone())
+            }
+            AppError::BadRequest { message } => {
+                tracing::warn!("Bad request: {}", message);
+                (StatusCode::BAD_REQUEST, message.clone())
             }
             AppError::SelfModificationForbidden => {
                 tracing::warn!("Forbidden to modify yourself");

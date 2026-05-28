@@ -191,7 +191,11 @@ fun LoginScreen(
                             )
                         } catch (e: Exception) {
                             Log.e("Auth", "Mock login error", e)
-                            Toast.makeText(context, "Mock Login failed: ${e.message}", Toast.LENGTH_LONG).show()
+                            Toast.makeText(
+                                context,
+                                "Mock Login failed: ${e.message}",
+                                Toast.LENGTH_LONG
+                            ).show()
                         }
                     },
                     modifier = Modifier.fillMaxWidth()

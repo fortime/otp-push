@@ -65,6 +65,7 @@ dependencies {
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.play.services)
+    implementation(libs.bouncycastle.bcpkix)
 
     // Auth
     implementation(libs.androidx.credentials)

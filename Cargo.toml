@@ -36,3 +36,7 @@ figment = { version = "0.10", features = ["toml", "env"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 serde_with = { version = "3.0", features = ["chrono"] }
 google-oauth = "1.1"
+fcm-service = "0.2.3"
+spki = { version = "0.7", features = ["pem"] }
+base64 = "0.22"
+openssl = "0.10"

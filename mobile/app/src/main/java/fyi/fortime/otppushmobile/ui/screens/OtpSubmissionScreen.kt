@@ -2,13 +2,16 @@ package fyi.fortime.otppushmobile.ui.screens
 
 import android.content.ClipboardManager
 import android.content.Context
+import android.util.Base64
 import android.util.Log
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
@@ -35,6 +38,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentType
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import fyi.fortime.otppushmobile.data.PersistentStore
@@ -50,6 +56,31 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
+import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
+import org.bouncycastle.cert.X509CertificateHolder
+import org.bouncycastle.openssl.PEMParser
+import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
+import java.io.StringReader
+import java.nio.charset.StandardCharsets
+import java.security.KeyPairGenerator
+import java.security.PublicKey
+import java.security.SecureRandom
+import java.security.interfaces.ECPublicKey
+import java.security.spec.MGF1ParameterSpec
+import javax.crypto.Cipher
+import javax.crypto.KeyAgreement
+import javax.crypto.Mac
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.spec.OAEPParameterSpec
+import javax.crypto.spec.PSource
+import javax.crypto.spec.SecretKeySpec
+
+private const val EC_ENVELOPE_VERSION = "v1"
+private const val EC_ENVELOPE_ALGORITHM = "ecdh-aes-256-gcm"
+private const val EC_ENVELOPE_INFO = "otp-push password ecdh-aes-256-gcm v1"
+private const val RSA_ENVELOPE_VERSION = "v1"
+private const val RSA_ENVELOPE_ALGORITHM = "rsa-oaep-sha256"
+private const val RSA_ENVELOPE_INFO = "otp-push password rsa-oaep-sha256 v1"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -59,19 +90,29 @@ fun OtpSubmissionScreen(
     currentRequestId: String?,
     otpRecordName: String?,
     serviceIdentifier: String?,
+    pubKey: String?,
     onUnauthorized: () -> Unit,
     onBack: () -> Unit,
     onSuccess: () -> Unit
 ) {
     var accountName by remember { mutableStateOf("") }
-    var otpCode by remember { mutableStateOf("") }
+    var secretValue by remember { mutableStateOf("") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val isPasswordRequest = !pubKey.isNullOrBlank()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Submit OTP for $otpRecordName") },
+                title = {
+                    Text(
+                        if (isPasswordRequest) {
+                            "Submit Password for $otpRecordName"
+                        } else {
+                            "Submit OTP for $otpRecordName"
+                        }
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
@@ -92,7 +133,7 @@ fun OtpSubmissionScreen(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
-                        "Awaiting OTP for Request",
+                        if (isPasswordRequest) "Awaiting Password for Request" else "Awaiting OTP for Request",
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.secondary
                     )
@@ -127,10 +168,10 @@ fun OtpSubmissionScreen(
                 value = accountName,
                 onValueChange = {
                     accountName = it
-                    if (it == serviceIdentifier) {
+                    if (!isPasswordRequest && it == serviceIdentifier) {
                         val clipboardOtp = getOtpFromClipboard(context)
                         if (clipboardOtp != null) {
-                            otpCode = clipboardOtp
+                            secretValue = clipboardOtp
                         }
                     }
                 },
@@ -143,54 +184,63 @@ fun OtpSubmissionScreen(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            Text("OTP")
+            Text(if (isPasswordRequest) "Password" else "OTP")
             TextField(
-                value = otpCode,
-                onValueChange = { otpCode = it },
+                value = secretValue,
+                onValueChange = { secretValue = it },
                 modifier = Modifier
                     .fillMaxWidth()
                     .semantics {
-                        contentType = ContentType.SmsOtpCode
-                    }
+                        contentType =
+                            if (isPasswordRequest) ContentType.Password else ContentType.SmsOtpCode
+                    },
+                visualTransformation =
+                    if (isPasswordRequest) PasswordVisualTransformation() else VisualTransformation.None,
+                keyboardOptions = KeyboardOptions(
+                    keyboardType = if (isPasswordRequest) KeyboardType.Password else KeyboardType.Number
+                )
             )
 
             Spacer(modifier = Modifier.height(32.dp))
 
             Button(
                 onClick = {
-                    if (currentRequestId != null && otpCode.isNotBlank()) {
+                    if (currentRequestId != null && secretValue.isNotBlank()) {
                         submitOtp(
                             scope,
                             client,
                             persistentStore,
                             context,
                             currentRequestId,
-                            otpCode,
+                            secretValue,
+                            pubKey,
                             onUnauthorized
                         ) {
-                            otpCode = ""
+                            secretValue = ""
                             onSuccess()
                         }
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),
-                enabled = currentRequestId != null && otpCode.isNotBlank()
+                enabled = currentRequestId != null && secretValue.isNotBlank()
             ) {
-                Text("Submit OTP")
+                Text(if (isPasswordRequest) "Submit Password" else "Submit OTP")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            if (!isPasswordRequest) {
+                Spacer(modifier = Modifier.height(16.dp))
 
-            OutlinedButton(
-                onClick = {
-                    val otp = getOtpFromClipboard(context)
-                    if (otp != null) {
-                        otpCode = otp
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Check Clipboard for OTP")
+                OutlinedButton(
+                    onClick = {
+                        val otp = getOtpFromClipboard(context)
+                        if (otp != null) {
+                            secretValue = otp
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Check Clipboard for OTP")
+                }
             }
         }
     }
@@ -202,13 +252,25 @@ private fun submitOtp(
     persistentStore: PersistentStore,
     context: Context,
     requestId: String,
-    otp: String,
+    secretValue: String,
+    pubKey: String?,
     onUnauthorized: () -> Unit,
     onSuccess: () -> Unit
 ) {
     scope.launch {
         val token = persistentStore.getToken() ?: return@launch onUnauthorized()
         val baseUrl = persistentStore.getServerUrl()
+        val submittedValue = try {
+            if (pubKey.isNullOrBlank()) {
+                secretValue
+            } else {
+                encryptWithPublicKey(secretValue, pubKey)
+            }
+        } catch (e: Exception) {
+            Log.w("OtpPush", "failed to encrypt password", e)
+            Toast.makeText(context, "Failed to encrypt password", Toast.LENGTH_LONG).show()
+            return@launch
+        }
 
         client.safeApiCall(
             context = context,
@@ -217,7 +279,7 @@ private fun submitOtp(
                 url("$baseUrl/api/mobile/otp/submit")
                 header("Authorization", "Bearer $token")
                 contentType(Application.Json)
-                setBody(SubmitOtpRequest(requestId, otp))
+                setBody(SubmitOtpRequest(requestId, submittedValue))
             },
             onUnauthorized = onUnauthorized,
             successCode = HttpStatusCode.OK,
@@ -225,6 +287,102 @@ private fun submitOtp(
         )?.let {
             Log.d("OtpPush", "OTP submitted successfully")
             onSuccess()
+        }
+    }
+}
+
+private fun encryptWithPublicKey(plainText: String, pem: String): String {
+    val publicKey = parsePublicKey(pem)
+    return when (publicKey.algorithm.uppercase()) {
+        "RSA" -> encryptWithRsaPublicKey(plainText, publicKey)
+        "EC", "ECDH", "ECDSA" -> encryptWithEcPublicKey(plainText, publicKey)
+        else -> throw IllegalArgumentException(
+            "Unsupported password encryption key algorithm: ${publicKey.algorithm}"
+        )
+    }
+}
+
+private fun encryptWithRsaPublicKey(plainText: String, publicKey: PublicKey): String {
+    val cipher = Cipher.getInstance("RSA/ECB/OAEPWithSHA-256AndMGF1Padding")
+    cipher.init(
+        Cipher.ENCRYPT_MODE,
+        publicKey,
+        OAEPParameterSpec(
+            "SHA-256",
+            "MGF1",
+            MGF1ParameterSpec.SHA256,
+            PSource.PSpecified.DEFAULT
+        )
+    )
+    val encrypted = cipher.doFinal(plainText.toByteArray(StandardCharsets.UTF_8))
+    val infoBytes = RSA_ENVELOPE_INFO.toByteArray(StandardCharsets.UTF_8)
+    return listOf(
+        RSA_ENVELOPE_VERSION,
+        RSA_ENVELOPE_ALGORITHM,
+        base64UrlNoPadding(infoBytes),
+        base64UrlNoPadding(encrypted)
+    ).joinToString(".")
+}
+
+private fun encryptWithEcPublicKey(plainText: String, publicKey: PublicKey): String {
+    val ecPublicKey = publicKey as? ECPublicKey
+        ?: throw IllegalArgumentException("EC public key is not an ECPublicKey")
+    val keyPairGenerator = KeyPairGenerator.getInstance("EC")
+    keyPairGenerator.initialize(ecPublicKey.params)
+    val ephemeralKeyPair = keyPairGenerator.generateKeyPair()
+
+    val agreement = KeyAgreement.getInstance("ECDH")
+    agreement.init(ephemeralKeyPair.private)
+    agreement.doPhase(ecPublicKey, true)
+    val sharedSecret = agreement.generateSecret()
+    val infoBytes = EC_ENVELOPE_INFO.toByteArray(StandardCharsets.UTF_8)
+    val aesKey = deriveEcAesKey(sharedSecret, ephemeralKeyPair.public.encoded, infoBytes)
+
+    val iv = ByteArray(12)
+    SecureRandom().nextBytes(iv)
+    val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+    cipher.init(Cipher.ENCRYPT_MODE, SecretKeySpec(aesKey, "AES"), GCMParameterSpec(128, iv))
+    cipher.updateAAD(infoBytes)
+    val ciphertext = cipher.doFinal(plainText.toByteArray(StandardCharsets.UTF_8))
+
+    return listOf(
+        EC_ENVELOPE_VERSION,
+        EC_ENVELOPE_ALGORITHM,
+        base64UrlNoPadding(infoBytes),
+        base64UrlNoPadding(ephemeralKeyPair.public.encoded),
+        base64UrlNoPadding(iv),
+        base64UrlNoPadding(ciphertext)
+    ).joinToString(".")
+}
+
+private fun deriveEcAesKey(
+    sharedSecret: ByteArray,
+    ephemeralPublicKey: ByteArray,
+    info: ByteArray
+): ByteArray {
+    val salt = ephemeralPublicKey
+    val pseudoRandomKey = hmacSha256(salt, sharedSecret)
+    return hmacSha256(pseudoRandomKey, info + byteArrayOf(1)).copyOf(32)
+}
+
+private fun hmacSha256(key: ByteArray, data: ByteArray): ByteArray {
+    val mac = Mac.getInstance("HmacSHA256")
+    mac.init(SecretKeySpec(key, "HmacSHA256"))
+    return mac.doFinal(data)
+}
+
+private fun base64UrlNoPadding(bytes: ByteArray): String {
+    return Base64.encodeToString(bytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+}
+
+private fun parsePublicKey(pem: String): PublicKey {
+    PEMParser(StringReader(pem)).use { parser ->
+        val parsed = parser.readObject()
+        val converter = JcaPEMKeyConverter()
+        return when (parsed) {
+            is SubjectPublicKeyInfo -> converter.getPublicKey(parsed)
+            is X509CertificateHolder -> converter.getPublicKey(parsed.subjectPublicKeyInfo)
+            else -> throw IllegalArgumentException("Unsupported PEM public key format")
         }
     }
 }

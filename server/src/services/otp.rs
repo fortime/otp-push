@@ -18,6 +18,7 @@ use crate::{
 pub async fn create_otp_request(
     state: &SharedState,
     token: &api_access_token::Model,
+    pub_key: Option<String>,
 ) -> Result<otp_request::Model, AppError> {
     let now = Utc::now();
 
@@ -25,6 +26,7 @@ pub async fn create_otp_request(
         id: ActiveValue::Set(Uuid::now_v7()),
         otp_record_id: ActiveValue::Set(token.otp_record_id),
         status: ActiveValue::Set(OtpRequestStatus::Pending as i32),
+        pub_key: ActiveValue::Set(pub_key),
         created_at: ActiveValue::Set(now),
         updated_at: ActiveValue::Set(now),
         ..Default::default()
@@ -50,6 +52,8 @@ pub async fn create_otp_request(
         let devices = device::Entity::find()
             .inner_join(user_device::Entity)
             .filter(user_device::Column::UserId.eq(record.user_id))
+            .filter(device::Column::FcmToken.is_not_null())
+            .filter(device::Column::FcmToken.ne(""))
             .all(&state.db)
             .await?;
 
@@ -86,7 +90,7 @@ pub async fn wait_for_otp(
     state: &SharedState,
     token: &api_access_token::Model,
     request_id: Uuid,
-) -> Result<Option<String>, AppError> {
+) -> Result<Option<(bool, String)>, AppError> {
     let request = otp_request::Entity::find_by_id(request_id)
         .one(&state.db)
         .await?
@@ -100,10 +104,12 @@ pub async fn wait_for_otp(
         });
     }
 
+    let encrypted = request.pub_key.is_some_and(|s| !s.is_empty());
+
     if request.status == OtpRequestStatus::Completed as i32
         && let Some(code) = request.otp_code
     {
-        return Ok(Some(code));
+        return Ok(Some((encrypted, code)));
     }
 
     let waiter = state.waiter_manager.new_waiter(request_id);
@@ -117,7 +123,7 @@ pub async fn wait_for_otp(
             })?;
 
         if let Some(code) = request.otp_code {
-            return Ok(Some(code));
+            return Ok(Some((encrypted, code)));
         }
     }
 
