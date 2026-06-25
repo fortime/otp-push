@@ -192,6 +192,7 @@ class MainActivity : ComponentActivity() {
                 currentRequestId = selectedOtpRequest!!.id,
                 otpRecordName = selectedOtpRequest!!.otp_record_name,
                 serviceIdentifier = selectedOtpRequest!!.service_identifier,
+                pubKey = selectedOtpRequest!!.pub_key,
                 onUnauthorized = { handleLogout() },
                 onBack = { setSelectedOtpRequest(null) },
                 onSuccess = { setSelectedOtpRequest(null) }

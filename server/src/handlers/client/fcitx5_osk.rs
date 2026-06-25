@@ -5,7 +5,8 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use common::{
-    Fcitx5OskComboKey, Fcitx5OskComboKeyGroup, Fcitx5OskHttpApiResponse, Fcitx5OskKeyValue,
+    CreateOtpRequest, Fcitx5OskComboKey, Fcitx5OskComboKeyGroup, Fcitx5OskHttpApiResponse,
+    Fcitx5OskKeyValue,
 };
 use uuid::Uuid;
 
@@ -130,22 +131,23 @@ fn otp_to_groups(code: &str) -> Vec<Fcitx5OskComboKeyGroup> {
         }
     }
 
-    // Append Enter key
-    keys.push(Fcitx5OskComboKey::Key(Fcitx5OskKeyValue {
-        s: "󰌑".to_string(),
-        c: '\n',
-        kc: 36,
-        f: Some("fcitx5 osk nerd".to_string()),
-    }));
-
     vec![Fcitx5OskComboKeyGroup { keys }]
 }
 
 pub async fn request(
     State(state): State<SharedState>,
     auth: ApiTokenAuth,
+    Json(payload): Json<CreateOtpRequest>,
 ) -> Result<Json<Fcitx5OskHttpApiResponse>, AppError> {
-    let result = otp_service::create_otp_request(&state, &auth.token).await?;
+    let pub_key = payload
+        .pub_key
+        .map(|key| key.trim().to_string())
+        .filter(|key| !key.is_empty());
+    if let Some(pub_key) = &pub_key {
+        super::validate_x509_public_key_pem(pub_key)?;
+    }
+
+    let result = otp_service::create_otp_request(&state, &auth.token, pub_key).await?;
 
     let id_str = result.id.to_string();
     let short_id = if id_str.len() >= 6 {
@@ -169,6 +171,7 @@ pub async fn request(
     Ok(Json(Fcitx5OskHttpApiResponse {
         prompts,
         groups: Vec::new(),
+        secret: None,
         next,
     }))
 }
@@ -180,10 +183,16 @@ pub async fn poll(
 ) -> Result<Response, AppError> {
     let code = otp_service::wait_for_otp(&state, &auth.token, request_id).await?;
 
-    if let Some(code) = code {
+    if let Some((encrypted, code)) = code {
+        let (secret, groups) = if encrypted {
+            (Some(code), vec![])
+        } else {
+            (None, otp_to_groups(&code))
+        };
         return Ok(Json(Fcitx5OskHttpApiResponse {
             prompts: Vec::new(),
-            groups: otp_to_groups(&code),
+            groups,
+            secret,
             next: None,
         })
         .into_response());

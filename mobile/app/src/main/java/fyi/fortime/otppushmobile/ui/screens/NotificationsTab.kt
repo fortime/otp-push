@@ -147,7 +147,11 @@ fun NotificationsTab(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            "Tap to capture and submit OTP",
+                            if (item.pub_key.isNullOrBlank()) {
+                                "Tap to capture and submit OTP"
+                            } else {
+                                "Tap to enter and submit encrypted password"
+                            },
                             color = MaterialTheme.colorScheme.primary
                         )
                     }

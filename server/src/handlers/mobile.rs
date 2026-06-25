@@ -57,6 +57,7 @@ pub async fn list_pending_requests(
             otp_record_name: record.name,
             service_identifier: record.service_identifier,
             status: r.status.into(),
+            pub_key: r.pub_key,
             created_at: r.created_at,
         });
     }
@@ -66,7 +67,7 @@ pub async fn list_pending_requests(
 
 pub async fn submit_otp(
     State(state): State<SharedState>,
-    _auth: AuthUser,
+    auth: AuthUser,
     Json(payload): Json<SubmitOtpRequest>,
 ) -> Result<StatusCode, AppError> {
     let request = otp_request::Entity::find_by_id(payload.request_id)
@@ -75,6 +76,19 @@ pub async fn submit_otp(
         .ok_or(AppError::NotFound {
             message: "Request not found".to_string(),
         })?;
+
+    let record = otp_record::Entity::find_by_id(request.otp_record_id)
+        .one(&state.db)
+        .await?
+        .ok_or(AppError::Internal {
+            message: "Record missing for request".to_string(),
+        })?;
+
+    if record.user_id != auth.user.id {
+        return Err(AppError::NotFound {
+            message: "Request not found".to_string(),
+        });
+    }
 
     let mut request_active: otp_request::ActiveModel = request.into();
     request_active.otp_code = ActiveValue::Set(Some(payload.otp_code));
@@ -155,6 +169,7 @@ pub async fn get_request(
         otp_record_name: record.name,
         service_identifier: record.service_identifier,
         status: request.status.into(),
+        pub_key: request.pub_key,
         created_at: request.created_at,
     }))
 }

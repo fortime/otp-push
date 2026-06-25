@@ -68,6 +68,11 @@ pub struct CreateTokenResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct CreateOtpRequest {
+    pub pub_key: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct OtpRequestResponse {
     pub request_id: Uuid,
     pub status: OtpRequestStatus,
@@ -106,6 +111,7 @@ pub struct OtpRequestDto {
     pub otp_record_name: String,
     pub service_identifier: String,
     pub status: OtpRequestStatus,
+    pub pub_key: Option<String>,
     pub created_at: DateTimeUtc,
 }
 
@@ -139,6 +145,7 @@ pub struct Fcitx5OskComboKeyGroup {
 pub struct Fcitx5OskHttpApiResponse {
     pub prompts: Vec<Vec<(String, Option<String>)>>,
     pub groups: Vec<Fcitx5OskComboKeyGroup>,
+    pub secret: Option<String>,
     pub next: Option<String>,
 }
 

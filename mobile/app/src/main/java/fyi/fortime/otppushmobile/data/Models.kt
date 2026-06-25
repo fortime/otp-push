@@ -80,6 +80,7 @@ data class OtpRequestDto(
     val otp_record_name: String,
     val service_identifier: String,
     val status: String,
+    val pub_key: String? = null,
     val created_at: String
 )
 
