@@ -7,13 +7,8 @@ use std::{
     time::Duration,
 };
 
-use fcm_service::FcmService;
-use google_oauth::AsyncClient;
-use sea_orm::DatabaseConnection;
-use tokio::sync::Notify;
+use tokio::{sync::Notify, time};
 use uuid::Uuid;
-
-use crate::config::Config;
 
 pub struct WaiterInfo {
     pub notify: Notify,
@@ -109,11 +104,11 @@ impl WaiterGuard {
     pub async fn notified(&self, timeout: Duration) -> bool {
         if let Some(info) = &self.info {
             tokio::select! {
-                _ = tokio::time::sleep(timeout) => false,
+                _ = time::sleep(timeout) => false,
                 _ = info.notify.notified() => true,
             }
         } else {
-            tokio::time::sleep(timeout).await;
+            time::sleep(timeout).await;
             true
         }
     }
@@ -126,13 +121,3 @@ impl Drop for WaiterGuard {
         }
     }
 }
-
-pub struct AppState {
-    pub db: DatabaseConnection,
-    pub config: Config,
-    pub waiter_manager: Arc<WaiterManager>,
-    pub google_client: AsyncClient,
-    pub fcm_service: Option<FcmService>,
-}
-
-pub type SharedState = Arc<AppState>;

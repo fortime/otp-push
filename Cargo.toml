@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.2.0"
 edition = "2024"
 authors = ["fortime <palfortime@gmail.com>"]
 license = "MIT"
@@ -40,3 +40,6 @@ fcm-service = "0.2.3"
 spki = { version = "0.7", features = ["pem"] }
 base64 = "0.22"
 openssl = "0.10"
+bluer = { version = "0.17", features = ["full"] }
+futures = "0.3"
+

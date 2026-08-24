@@ -11,18 +11,18 @@ use common::{
 use sea_orm::{ActiveValue, QueryOrder, QuerySelect, entity::prelude::*};
 use uuid::Uuid;
 
-use crate::{
+use crate::http::{
     auth::AuthUser,
     entities::{device, otp_record, otp_request, user_device},
-    error::AppError,
-    state::SharedState,
+    error::AppHttpError,
+    state::SharedAppHttpState,
 };
 
 pub async fn list_pending_requests(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     pagination: Query<PaginationQuery>,
-) -> Result<Json<PaginatedResponse<OtpRequestDto>>, AppError> {
+) -> Result<Json<PaginatedResponse<OtpRequestDto>>, AppHttpError> {
     let limit = pagination.limit();
     let offset = pagination.offset();
     let thirty_minutes_ago = Utc::now() - Duration::minutes(30);
@@ -47,7 +47,7 @@ pub async fn list_pending_requests(
         let record = otp_record::Entity::find_by_id(r.otp_record_id)
             .one(&state.db)
             .await?
-            .ok_or(AppError::Internal {
+            .ok_or(AppHttpError::Internal {
                 message: "Record missing for request".to_string(),
             })?;
 
@@ -66,26 +66,26 @@ pub async fn list_pending_requests(
 }
 
 pub async fn submit_otp(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Json(payload): Json<SubmitOtpRequest>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     let request = otp_request::Entity::find_by_id(payload.request_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "Request not found".to_string(),
         })?;
 
     let record = otp_record::Entity::find_by_id(request.otp_record_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::Internal {
+        .ok_or(AppHttpError::Internal {
             message: "Record missing for request".to_string(),
         })?;
 
     if record.user_id != auth.user.id {
-        return Err(AppError::NotFound {
+        return Err(AppHttpError::NotFound {
             message: "Request not found".to_string(),
         });
     }
@@ -103,10 +103,10 @@ pub async fn submit_otp(
 }
 
 pub async fn update_fcm_token(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Json(payload): Json<UpdateFcmTokenRequest>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     let db = &state.db;
 
     let binding = user_device::Entity::find()
@@ -115,14 +115,14 @@ pub async fn update_fcm_token(
         .filter(device::Column::DeviceUuid.eq(payload.device_id))
         .one(db)
         .await?
-        .ok_or_else(|| AppError::NotFound {
+        .ok_or_else(|| AppHttpError::NotFound {
             message: "Device not found or not bound to user".to_string(),
         })?;
 
     let device_record = device::Entity::find_by_id(binding.device_id)
         .one(db)
         .await?
-        .ok_or_else(|| AppError::Internal {
+        .ok_or_else(|| AppHttpError::Internal {
             message: "Device record missing".to_string(),
         })?;
 
@@ -137,28 +137,28 @@ pub async fn update_fcm_token(
 }
 
 pub async fn get_request(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Path(request_id): Path<Uuid>,
-) -> Result<Json<OtpRequestDto>, AppError> {
+) -> Result<Json<OtpRequestDto>, AppHttpError> {
     let db = &state.db;
 
     let request = otp_request::Entity::find_by_id(request_id)
         .one(db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "Request not found".to_string(),
         })?;
 
     let record = otp_record::Entity::find_by_id(request.otp_record_id)
         .one(db)
         .await?
-        .ok_or(AppError::Internal {
+        .ok_or(AppHttpError::Internal {
             message: "Record missing for request".to_string(),
         })?;
 
     if record.user_id != auth.user.id {
-        return Err(AppError::NotFound {
+        return Err(AppHttpError::NotFound {
             message: "Request not found".to_string(),
         });
     }
@@ -175,10 +175,10 @@ pub async fn get_request(
 }
 
 pub async fn logout(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Json(payload): Json<LogoutRequest>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     let db = &state.db;
 
     let binding = user_device::Entity::find()

@@ -185,3 +185,24 @@ impl PaginationQuery {
         (self.page() - 1) * self.limit()
     }
 }
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BleOtpRequest {
+    pub name: String,
+    pub service_identifier: String,
+    pub request_id: Uuid,
+    pub pub_key: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BleOtpResponse {
+    pub request_id: Uuid,
+    pub body: BleOtpResponseBody,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(tag = "type")]
+pub enum BleOtpResponseBody {
+    Ok { otp_code: String },
+    Err { message: String },
+}

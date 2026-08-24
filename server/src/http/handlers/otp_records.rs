@@ -14,19 +14,19 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::{
+use crate::http::{
     auth::AuthUser,
     entities::{api_access_token, otp_record},
-    error::AppError,
+    error::AppHttpError,
     services::user::{self as user_service, DefaultUserLimit, UserLimitTrait},
-    state::SharedState,
+    state::SharedAppHttpState,
 };
 
 pub async fn list_otp_records(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     pagination: Query<PaginationQuery>,
-) -> Result<Json<PaginatedResponse<OtpRecordDto>>, AppError> {
+) -> Result<Json<PaginatedResponse<OtpRecordDto>>, AppHttpError> {
     let limit = pagination.limit();
     let offset = pagination.offset();
 
@@ -55,10 +55,10 @@ pub async fn list_otp_records(
 }
 
 pub async fn create_otp_record(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Json(payload): Json<CreateOtpRecordRequest>,
-) -> Result<(StatusCode, Json<OtpRecordDto>), AppError> {
+) -> Result<(StatusCode, Json<OtpRecordDto>), AppHttpError> {
     // 1. Check existing records count
     let count = otp_record::Entity::find()
         .filter(otp_record::Column::UserId.eq(auth.user.id))
@@ -72,7 +72,7 @@ pub async fn create_otp_record(
         .unwrap_or_else(|| DefaultUserLimit.max_otp_records());
 
     if count >= limit as u64 {
-        return Err(AppError::LimitExceeded {
+        return Err(AppHttpError::LimitExceeded {
             message: format!("You have reached the limit of {} OTP records.", limit),
         });
     }
@@ -100,21 +100,21 @@ pub async fn create_otp_record(
 }
 
 pub async fn create_api_token(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Path(record_id): Path<Uuid>,
     Json(payload): Json<CreateTokenRequest>,
-) -> Result<(StatusCode, Json<CreateTokenResponse>), AppError> {
+) -> Result<(StatusCode, Json<CreateTokenResponse>), AppHttpError> {
     // Verify ownership
     let record = otp_record::Entity::find_by_id(record_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "Record not found".to_string(),
         })?;
 
     if record.user_id != auth.user.id {
-        return Err(AppError::AuthError {
+        return Err(AppHttpError::AuthError {
             message: "Forbidden".to_string(),
         });
     }
@@ -136,7 +136,7 @@ pub async fn create_api_token(
         .unwrap_or_else(|| DefaultUserLimit.max_tokens_per_record());
 
     if count >= limit as u64 {
-        return Err(AppError::LimitExceeded {
+        return Err(AppHttpError::LimitExceeded {
             message: format!(
                 "You have reached the limit of {} API tokens for this record.",
                 limit
@@ -170,20 +170,20 @@ pub async fn create_api_token(
 }
 
 pub async fn list_api_tokens(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Path(record_id): Path<Uuid>,
-) -> Result<Json<Vec<ApiAccessTokenDto>>, AppError> {
+) -> Result<Json<Vec<ApiAccessTokenDto>>, AppHttpError> {
     // Verify ownership of the record
     let record = otp_record::Entity::find_by_id(record_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "Record not found".to_string(),
         })?;
 
     if record.user_id != auth.user.id {
-        return Err(AppError::AuthError {
+        return Err(AppHttpError::AuthError {
             message: "Forbidden".to_string(),
         });
     }
@@ -224,20 +224,20 @@ pub async fn list_api_tokens(
 }
 
 pub async fn delete_api_token(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Path((record_id, token_id)): Path<(Uuid, Uuid)>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     // Verify ownership of the record
     let record = otp_record::Entity::find_by_id(record_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "Record not found".to_string(),
         })?;
 
     if record.user_id != auth.user.id {
-        return Err(AppError::AuthError {
+        return Err(AppHttpError::AuthError {
             message: "Forbidden".to_string(),
         });
     }
@@ -245,12 +245,12 @@ pub async fn delete_api_token(
     let token = api_access_token::Entity::find_by_id(token_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "Token not found".to_string(),
         })?;
 
     if token.otp_record_id != record_id {
-        return Err(AppError::AuthError {
+        return Err(AppHttpError::AuthError {
             message: "Token does not belong to this record".to_string(),
         });
     }
@@ -261,10 +261,10 @@ pub async fn delete_api_token(
 }
 
 pub async fn delete_otp_record(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
     Path(record_id): Path<Uuid>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     otp_record::Entity::delete_many()
         .filter(otp_record::Column::Id.eq(record_id))
         .filter(otp_record::Column::UserId.eq(auth.user.id))

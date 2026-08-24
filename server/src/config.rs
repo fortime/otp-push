@@ -3,19 +3,24 @@ use std::path::PathBuf;
 use clap::Parser;
 use figment::{
     Error, Figment,
-    providers::{Env, Format, Serialized, Toml},
+    providers::{Env, Format as _, Serialized, Toml},
 };
 use serde::{Deserialize, Serialize};
-use serde_with::skip_serializing_none;
 
-#[skip_serializing_none]
+use crate::{ble::config::Config as BleConfig, http::config::Config as HttpConfig};
+
+#[serde_with::skip_serializing_none]
 #[derive(Parser, Debug, Serialize, Clone)]
 #[command(author, version, about, long_about = None)]
-struct CliArgs {
+pub struct CliArgs {
     /// Path to the configuration file
     #[arg(short, long, env = "OTP_PUSH_SERVER_CONFIG")]
     #[serde(skip)]
     config: Option<PathBuf>,
+
+    /// Enable http otp push feature
+    #[arg(long, default_missing_value = "true")]
+    http_enabled: Option<bool>,
 
     /// Database URL
     #[arg(long)]
@@ -44,24 +49,43 @@ struct CliArgs {
     /// Days to retain OTP requests
     #[arg(long)]
     otp_request_retention_days: Option<i64>,
+
+    /// Enable ble otp push feature
+    #[arg(long, default_missing_value = "true")]
+    ble_enabled: Option<bool>,
+
+    /// BLE Device Name to connect to
+    #[arg(long)]
+    ble_device_name: Option<String>,
+
+    /// BLE scan timeout in seconds
+    #[arg(long)]
+    ble_scan_timeout_secs: Option<u64>,
+}
+
+impl CliArgs {
+    pub fn config(&self) -> Option<&PathBuf> {
+        self.config.as_ref()
+    }
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Config {
-    pub database_url: String,
-    pub jwt_secret: String,
-    pub google_client_id: String,
-    pub listen_addr: String,
-    pub fcm_service_account: Option<PathBuf>,
-    pub base_url: Option<String>,
-    #[serde(default = "default_retention_days")]
-    pub otp_request_retention_days: i64,
-    #[serde(default)]
-    pub log_directives: Vec<String>,
+    pub common: CommonConfig,
+    #[serde(skip)]
+    pub ble: Option<BleConfig>,
+    #[serde(skip)]
+    pub http: Option<HttpConfig>,
 }
 
-fn default_retention_days() -> i64 {
-    7
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CommonConfig {
+    pub listen_addr: String,
+    pub base_url: Option<String>,
+    #[serde(default)]
+    pub log_directives: Vec<String>,
+    pub ble_enabled: Option<bool>,
+    pub http_enabled: Option<bool>,
 }
 
 impl Config {
@@ -71,16 +95,36 @@ impl Config {
         let mut figment = Figment::new();
 
         // If a config file is provided via CLI or ENV, merge it
-        if let Some(config_path) = &args.config {
-            figment = figment.merge(Toml::file(config_path));
+        if let Some(config_path) = args.config() {
+            figment = figment.merge(Toml::file(config_path)).focus("common");
         }
 
-        figment = figment.merge(Env::prefixed("OTP_PUSH_SERVER_"));
+        figment = figment.merge(Env::prefixed("OTP_PUSH_SERVER_COMMON_"));
 
         // Finally, merge the CLI arguments themselves
         // We use serialized CLI args to figment
         figment = figment.merge(Serialized::defaults(&args));
 
-        figment.extract().map_err(Box::from)
+        let common: CommonConfig = figment.extract().map_err(Box::from)?;
+        eprintln!(
+            "ble: {:?}, http: {:?}",
+            common.ble_enabled, common.http_enabled
+        );
+
+        let mut config = Config {
+            common,
+            ble: None,
+            http: None,
+        };
+
+        if config.common.ble_enabled.unwrap_or(false) {
+            config.ble = Some(BleConfig::load(&args)?);
+        }
+
+        if config.common.http_enabled.unwrap_or(true) {
+            config.http = Some(HttpConfig::load(&args)?);
+        }
+
+        Ok(config)
     }
 }

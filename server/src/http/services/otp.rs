@@ -9,17 +9,17 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::{
+use crate::http::{
     entities::{api_access_token, device, otp_record, otp_request, user_device},
-    error::AppError,
-    state::SharedState,
+    error::AppHttpError,
+    state::SharedAppHttpState,
 };
 
 pub async fn create_otp_request(
-    state: &SharedState,
+    state: &SharedAppHttpState,
     token: &api_access_token::Model,
     pub_key: Option<String>,
-) -> Result<otp_request::Model, AppError> {
+) -> Result<otp_request::Model, AppHttpError> {
     let now = Utc::now();
 
     let new_request = otp_request::ActiveModel {
@@ -45,7 +45,7 @@ pub async fn create_otp_request(
         let record = otp_record::Entity::find_by_id(result.otp_record_id)
             .one(&state.db)
             .await?
-            .ok_or(AppError::Internal {
+            .ok_or(AppHttpError::Internal {
                 message: "Record missing for request".to_string(),
             })?;
 
@@ -87,19 +87,19 @@ pub async fn create_otp_request(
 }
 
 pub async fn wait_for_otp(
-    state: &SharedState,
+    state: &SharedAppHttpState,
     token: &api_access_token::Model,
     request_id: Uuid,
-) -> Result<Option<(bool, String)>, AppError> {
+) -> Result<Option<(bool, String)>, AppHttpError> {
     let request = otp_request::Entity::find_by_id(request_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "Request not found".to_string(),
         })?;
 
     if request.otp_record_id != token.otp_record_id {
-        return Err(AppError::AuthError {
+        return Err(AppHttpError::AuthError {
             message: "Forbidden".to_string(),
         });
     }
@@ -118,7 +118,7 @@ pub async fn wait_for_otp(
         let request = otp_request::Entity::find_by_id(request_id)
             .one(&state.db)
             .await?
-            .ok_or(AppError::NotFound {
+            .ok_or(AppHttpError::NotFound {
                 message: "Request not found".to_string(),
             })?;
 
@@ -133,7 +133,7 @@ pub async fn wait_for_otp(
 pub async fn cleanup_old_requests(
     db: &DatabaseConnection,
     retention_days: i64,
-) -> Result<u64, AppError> {
+) -> Result<u64, AppHttpError> {
     let threshold = Utc::now() - TimeDelta::days(retention_days);
 
     let result = otp_request::Entity::delete_many()

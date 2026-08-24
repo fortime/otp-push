@@ -28,3 +28,6 @@ serde_with.workspace = true
 google-oauth.workspace = true
 fcm-service.workspace = true
 spki.workspace = true
+bluer.workspace = true
+futures.workspace = true
+

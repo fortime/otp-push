@@ -9,12 +9,12 @@ use sea_orm::{ActiveValue, IntoActiveModel, entity::prelude::*};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
+use crate::http::{
     auth::AdminAuthUser,
     entities::{user, user_limit},
-    error::AppError,
+    error::AppHttpError,
     services::user::{self as user_service, DefaultUserLimit, UserLimitTrait},
-    state::SharedState,
+    state::SharedAppHttpState,
 };
 
 #[derive(Serialize)]
@@ -33,9 +33,9 @@ impl<T: UserLimitTrait> From<T> for UserLimitsDto {
 }
 
 pub async fn list_users(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     _admin: AdminAuthUser,
-) -> Result<Json<Vec<UserDto>>, AppError> {
+) -> Result<Json<Vec<UserDto>>, AppHttpError> {
     let users = user::Entity::find().all(&state.db).await?;
     let dtos = users
         .into_iter()
@@ -52,10 +52,10 @@ pub async fn list_users(
 }
 
 pub async fn get_user_limits(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     _admin: AdminAuthUser,
     Path(user_id): Path<Uuid>,
-) -> Result<Json<UserLimitsDto>, AppError> {
+) -> Result<Json<UserLimitsDto>, AppHttpError> {
     let limit = user_service::get_user_limits(&state.db, user_id)
         .await?
         .map(UserLimitsDto::from)
@@ -65,18 +65,18 @@ pub async fn get_user_limits(
 }
 
 pub async fn toggle_user_enabled(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     admin: AdminAuthUser,
     Path(user_id): Path<Uuid>,
     Json(payload): Json<bool>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     if admin.0.user.id == user_id {
-        return Err(AppError::SelfModificationForbidden);
+        return Err(AppHttpError::SelfModificationForbidden);
     }
     let user = user::Entity::find_by_id(user_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "User not found".to_string(),
         })?;
 
@@ -89,18 +89,18 @@ pub async fn toggle_user_enabled(
 }
 
 pub async fn toggle_user_admin(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     admin: AdminAuthUser,
     Path(user_id): Path<Uuid>,
     Json(payload): Json<bool>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     if admin.0.user.id == user_id {
-        return Err(AppError::SelfModificationForbidden);
+        return Err(AppHttpError::SelfModificationForbidden);
     }
     let user = user::Entity::find_by_id(user_id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::NotFound {
+        .ok_or(AppHttpError::NotFound {
             message: "User not found".to_string(),
         })?;
 
@@ -119,11 +119,11 @@ pub struct UpdateLimitsRequest {
 }
 
 pub async fn update_user_limits(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     _admin: AdminAuthUser,
     Path(user_id): Path<Uuid>,
     Json(payload): Json<UpdateLimitsRequest>,
-) -> Result<StatusCode, AppError> {
+) -> Result<StatusCode, AppHttpError> {
     let now = Utc::now();
     let mut limit_active = match user_service::get_user_limits(&state.db, user_id).await? {
         Some(l) => l.into_active_model(),

@@ -7,34 +7,34 @@ use sea_orm::{
 };
 use uuid::Uuid;
 
-use crate::{
+use crate::http::{
     auth,
     entities::{device, user, user_device},
-    error::AppError,
-    state::SharedState,
+    error::AppHttpError,
+    state::SharedAppHttpState,
 };
 
-pub async fn get_auth_config(State(state): State<SharedState>) -> Json<AuthConfig> {
+pub async fn get_auth_config(State(state): State<SharedAppHttpState>) -> Json<AuthConfig> {
     Json(AuthConfig {
         google_client_id: state.config.google_client_id.clone(),
     })
 }
 
 pub async fn auth_google(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     Json(payload): Json<GoogleAuthRequest>,
-) -> Result<Json<AuthResponse>, AppError> {
+) -> Result<Json<AuthResponse>, AppHttpError> {
     let google_payload = state
         .google_client
         .validate_id_token(payload.id_token)
         .await
-        .map_err(|e| AppError::GoogleAuthError {
+        .map_err(|e| AppHttpError::GoogleAuthError {
             message: e.to_string(),
         })?;
 
     let google_email = google_payload
         .email
-        .ok_or_else(|| AppError::GoogleAuthError {
+        .ok_or_else(|| AppHttpError::GoogleAuthError {
             message: "Google token did not contain an email".to_string(),
         })?;
 
@@ -63,14 +63,14 @@ pub async fn auth_google(
 
     if let Some(device_uuid) = payload.device_id {
         let db = &state.db;
-        db.transaction::<_, (), AppError>(|txn| {
+        db.transaction::<_, (), AppHttpError>(|txn| {
             let user_id = user.id;
             let fcm_token = payload.fcm_token.clone();
             let create_device = payload.create_device.unwrap_or(false);
             Box::pin(async move {
                 // 1. Handle Device record
                 let device_record = if create_device {
-                    let fcm = fcm_token.clone().ok_or_else(|| AppError::AuthError {
+                    let fcm = fcm_token.clone().ok_or_else(|| AppHttpError::AuthError {
                         message: "fcm_token is required when create_device is true".to_string(),
                     })?;
                     let new_device = device::ActiveModel {
@@ -91,7 +91,7 @@ pub async fn auth_google(
                     {
                         Ok(d) => d,
                         Err(DbErr::RecordNotInserted) => {
-                            return Err(AppError::DeviceConflict {
+                            return Err(AppHttpError::DeviceConflict {
                                 message: "Device UUID already exists".to_string(),
                             });
                         }
@@ -103,7 +103,7 @@ pub async fn auth_google(
                         .filter(device::Column::DeviceUuid.eq(device_uuid))
                         .one(txn)
                         .await?
-                        .ok_or_else(|| AppError::NotFound {
+                        .ok_or_else(|| AppHttpError::NotFound {
                             message: "Device not found".to_string(),
                         })?
                 };
@@ -117,7 +117,7 @@ pub async fn auth_google(
 
                 if let Some(binding) = existing_binding {
                     if binding.user_id != user_id {
-                        return Err(AppError::DeviceConflict {
+                        return Err(AppHttpError::DeviceConflict {
                             message: "Device is bound to another user".to_string(),
                         });
                     }
@@ -190,9 +190,9 @@ pub async fn auth_google(
 }
 
 pub async fn refresh_token(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth_user: auth::AuthUser,
-) -> Result<impl IntoResponse, AppError> {
+) -> Result<impl IntoResponse, AppHttpError> {
     let token = auth::create_jwt(auth_user.user.id, &state.config.jwt_secret)?;
 
     let mut response = Json(AuthResponse {

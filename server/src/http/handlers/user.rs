@@ -2,16 +2,16 @@ use axum::{Json, extract::State};
 use common::UserDto;
 use sea_orm::entity::prelude::*;
 
-use crate::{auth::AuthUser, entities::user, error::AppError, state::SharedState};
+use crate::http::{auth::AuthUser, entities::user, error::AppHttpError, state::SharedAppHttpState};
 
 pub async fn get_me(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     auth: AuthUser,
-) -> Result<Json<UserDto>, AppError> {
+) -> Result<Json<UserDto>, AppHttpError> {
     let u = user::Entity::find_by_id(auth.user.id)
         .one(&state.db)
         .await?
-        .ok_or(AppError::AuthError {
+        .ok_or(AppHttpError::AuthError {
             message: "User not found".to_string(),
         })?;
 

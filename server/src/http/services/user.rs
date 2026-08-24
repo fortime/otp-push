@@ -1,7 +1,7 @@
 use sea_orm::{ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter};
 use uuid::Uuid;
 
-use crate::{entities::user_limit, error::AppError};
+use crate::http::{entities::user_limit, error::AppHttpError};
 
 pub struct DefaultUserLimit;
 
@@ -34,7 +34,7 @@ impl UserLimitTrait for user_limit::Model {
 pub async fn get_user_limits(
     db: &DatabaseConnection,
     user_id: Uuid,
-) -> Result<Option<user_limit::Model>, AppError> {
+) -> Result<Option<user_limit::Model>, AppHttpError> {
     Ok(user_limit::Entity::find()
         .filter(user_limit::Column::UserId.eq(user_id))
         .one(db)

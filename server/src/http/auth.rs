@@ -12,10 +12,10 @@ use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::{
+use crate::http::{
     entities::{api_access_token, user},
-    error::AppError,
-    state::SharedState,
+    error::AppHttpError,
+    state::SharedAppHttpState,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -31,11 +31,11 @@ pub struct RenewTokenSignal;
 #[derive(Clone, Copy, Debug)]
 pub struct SuppressTokenRenewal;
 
-pub fn create_jwt(user_id: Uuid, secret: &str) -> Result<String, AppError> {
+pub fn create_jwt(user_id: Uuid, secret: &str) -> Result<String, AppHttpError> {
     let now = Utc::now();
     let expiration = now
         .checked_add_signed(Duration::days(7))
-        .ok_or(AppError::Internal {
+        .ok_or(AppHttpError::Internal {
             message: "Failed to calculate token expiration".to_string(),
         })?
         .timestamp();
@@ -51,7 +51,7 @@ pub fn create_jwt(user_id: Uuid, secret: &str) -> Result<String, AppError> {
         &claims,
         &EncodingKey::from_secret(secret.as_ref()),
     )
-    .map_err(|e| AppError::Internal {
+    .map_err(|e| AppHttpError::Internal {
         message: format!("Failed to encode JWT: {}", e),
     })
 }
@@ -66,30 +66,30 @@ impl<S> FromRequestParts<S> for AuthUser
 where
     S: Send + Sync,
 {
-    type Rejection = AppError;
+    type Rejection = AppHttpError;
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
         parts
             .extensions
             .get::<AuthUser>()
             .cloned()
-            .ok_or(AppError::AuthError {
+            .ok_or(AppHttpError::AuthError {
                 message: "Authentication required".to_string(),
             })
     }
 }
 
 pub async fn auth_middleware(
-    State(state): State<SharedState>,
+    State(state): State<SharedAppHttpState>,
     mut req: Request<Body>,
     next: Next,
-) -> Result<Response, AppError> {
+) -> Result<Response, AppHttpError> {
     let auth_header = req
         .headers()
         .get("Authorization")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.strip_prefix("Bearer "))
-        .ok_or_else(|| AppError::AuthError {
+        .ok_or_else(|| AppHttpError::AuthError {
             message: "Missing authorization header".to_string(),
         })?;
 
@@ -98,25 +98,25 @@ pub async fn auth_middleware(
         &DecodingKey::from_secret(state.config.jwt_secret.as_ref()),
         &Validation::default(),
     )
-    .map_err(|_| AppError::AuthError {
+    .map_err(|_| AppHttpError::AuthError {
         message: "Invalid token".to_string(),
     })?;
 
     let user = user::Entity::find_by_id(token_data.claims.sub)
         .one(&state.db)
         .await
-        .map_err(|e| AppError::DatabaseError { source: e })?
-        .ok_or(AppError::AuthError {
+        .map_err(|e| AppHttpError::DatabaseError { source: e })?
+        .ok_or(AppHttpError::AuthError {
             message: "User not found".to_string(),
         })?;
 
     if !user.enabled {
-        return Err(AppError::UserDisabled);
+        return Err(AppHttpError::UserDisabled);
     }
 
     let token_version_seconds = user.token_version_at.timestamp() as usize;
     if token_data.claims.iat < token_version_seconds {
-        return Err(AppError::AuthError {
+        return Err(AppHttpError::AuthError {
             message: "Token revoked".to_string(),
         });
     }
@@ -154,12 +154,12 @@ impl<S> FromRequestParts<S> for AdminAuthUser
 where
     S: Send + Sync,
 {
-    type Rejection = AppError;
+    type Rejection = AppHttpError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
         let auth_user = AuthUser::from_request_parts(parts, state).await?;
         if !auth_user.user.admin {
-            return Err(AppError::AuthError {
+            return Err(AppHttpError::AuthError {
                 message: "Forbidden".to_string(),
             });
         }
@@ -174,19 +174,19 @@ pub struct ApiTokenAuth {
 #[async_trait]
 impl<S> FromRequestParts<S> for ApiTokenAuth
 where
-    SharedState: FromRef<S>,
+    SharedAppHttpState: FromRef<S>,
     S: Send + Sync,
 {
-    type Rejection = AppError;
+    type Rejection = AppHttpError;
 
     async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
-        let state = SharedState::from_ref(state);
+        let state = SharedAppHttpState::from_ref(state);
 
         let token = parts
             .headers
             .get("X-Api-Token")
             .and_then(|v| v.to_str().ok())
-            .ok_or(AppError::AuthError {
+            .ok_or(AppHttpError::AuthError {
                 message: "Missing API token".to_string(),
             })?;
 
@@ -194,8 +194,8 @@ where
             .filter(api_access_token::Column::TokenHash.eq(token))
             .one(&state.db)
             .await
-            .map_err(|e| AppError::DatabaseError { source: e })?
-            .ok_or(AppError::AuthError {
+            .map_err(|e| AppHttpError::DatabaseError { source: e })?
+            .ok_or(AppHttpError::AuthError {
                 message: "Invalid API token".to_string(),
             })?;
 
