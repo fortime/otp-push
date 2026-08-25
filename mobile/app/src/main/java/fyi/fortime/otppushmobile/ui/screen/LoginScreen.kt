@@ -1,4 +1,4 @@
-package fyi.fortime.otppushmobile.ui.screens
+package fyi.fortime.otppushmobile.ui.screen
 
 import android.content.Context
 import android.util.Log
@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -27,18 +26,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.credentials.CredentialManager
 import androidx.credentials.GetCredentialRequest
-import androidx.credentials.exceptions.GetCredentialException
+import androidx.credentials.exceptions.NoCredentialException
 import com.google.android.libraries.identity.googleid.GetGoogleIdOption
 import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
 import com.google.firebase.messaging.FirebaseMessaging
+import fyi.fortime.otppushmobile.AppContext
 import fyi.fortime.otppushmobile.BuildConfig
 import fyi.fortime.otppushmobile.data.AuthResponse
 import fyi.fortime.otppushmobile.data.GoogleAuthRequest
 import fyi.fortime.otppushmobile.data.PersistentStore
 import fyi.fortime.otppushmobile.data.UserDto
+import fyi.fortime.otppushmobile.util.ApiClient
 import fyi.fortime.otppushmobile.util.MockJwt
-import fyi.fortime.otppushmobile.util.safeApiCall
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
@@ -51,12 +50,15 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
+private const val LOG_TAG = "LoginScreen"
+
 @Composable
 fun LoginScreen(
-    client: HttpClient,
-    persistentStore: PersistentStore,
+    appContext: AppContext,
     onLoginSuccess: (UserDto) -> Unit
 ) {
+    val apiClient = appContext.apiClient
+    val persistentStore = appContext.persistentStore
     var serverUrlInput by remember { mutableStateOf(persistentStore.getServerUrl()) }
     var isLoadingConfig by remember { mutableStateOf(false) }
 
@@ -75,15 +77,11 @@ fun LoginScreen(
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text("OTP Push Mobile", style = MaterialTheme.typography.headlineLarge)
-
-        Spacer(modifier = Modifier.height(32.dp))
-
         OutlinedTextField(
             value = serverUrlInput,
             onValueChange = {
                 serverUrlInput = it
-                persistentStore.saveServerUrl(it)
+                appContext.persistentStore.saveServerUrl(it)
             },
             label = { Text("Server URL") },
             modifier = Modifier.fillMaxWidth(),
@@ -99,7 +97,7 @@ fun LoginScreen(
                 onClick = {
                     scope.launch {
                         isLoadingConfig = true
-                        val config = fetchAuthConfig(client, serverUrlInput, context)
+                        val config = fetchAuthConfig(apiClient, serverUrlInput)
                         isLoadingConfig = false
 
                         if (config != null) {
@@ -114,29 +112,34 @@ fun LoginScreen(
                                     .addCredentialOption(googleIdOption)
                                     .build()
 
-                                val result = credentialManager.getCredential(
-                                    context = context,
-                                    request = request
-                                )
+                                val result = try {
+                                    credentialManager.getCredential(
+                                        context = context,
+                                        request = request
+                                    )
+                                } catch (e: NoCredentialException) {
+                                    Log.e(LOG_TAG, "No credential return from `getCredential`", e)
+                                    null
+                                }
 
-                                val credential = result.credential
-                                if (credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                                val credential = result?.credential
+                                if (credential?.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
                                     val googleIdTokenCredential =
                                         GoogleIdTokenCredential.createFrom(credential.data)
                                     val idToken = googleIdTokenCredential.idToken
                                     performLogin(
                                         scope,
-                                        client,
+                                        apiClient,
                                         persistentStore,
                                         context,
                                         idToken,
                                         onLoginSuccess
                                     )
                                 } else {
-                                    Log.e("Auth", "Unexpected credential type: ${credential.type}")
+                                    Log.e(LOG_TAG, "Unexpected credential type: ${credential?.type}")
                                 }
-                            } catch (e: GetCredentialException) {
-                                Log.e("Auth", "Credential Manager error", e)
+                            } catch (e: Exception) {
+                                Log.e(LOG_TAG, "Credential Manager error", e)
                                 Toast.makeText(
                                     context,
                                     "Login failed: ${e.message}",
@@ -183,14 +186,13 @@ fun LoginScreen(
                             val token = MockJwt.createToken(mockUserId, mockSecret)
                             performMockLogin(
                                 scope,
-                                client,
+                                apiClient,
                                 persistentStore,
-                                context,
                                 token,
                                 onLoginSuccess
                             )
                         } catch (e: Exception) {
-                            Log.e("Auth", "Mock login error", e)
+                            Log.e(LOG_TAG, "Mock login error", e)
                             Toast.makeText(
                                 context,
                                 "Mock Login failed: ${e.message}",
@@ -209,9 +211,8 @@ fun LoginScreen(
 
 private fun performMockLogin(
     scope: CoroutineScope,
-    client: HttpClient,
+    apiClient: ApiClient,
     persistentStore: PersistentStore,
-    context: Context,
     token: String,
     onSuccess: (UserDto) -> Unit
 ) {
@@ -219,15 +220,11 @@ private fun performMockLogin(
         val baseUrl = persistentStore.getServerUrl()
         persistentStore.saveToken(token)
 
-        val user = client.safeApiCall(
-            context = context,
+        val user = apiClient.safeApiCall(
             builder = {
                 method = HttpMethod.Get
-                url("$baseUrl/api/users/me")
+                url("$baseUrl/api/http/users/me")
                 header("Authorization", "Bearer $token")
-            },
-            onUnauthorized = {
-                persistentStore.clearCredentials()
             },
             serializer = { it.body<UserDto>() }
         )
@@ -240,24 +237,21 @@ private fun performMockLogin(
 }
 
 private suspend fun fetchAuthConfig(
-    client: HttpClient,
+    apiClient: ApiClient,
     serverUrl: String,
-    context: Context
 ): fyi.fortime.otppushmobile.data.AuthConfig? {
-    return client.safeApiCall(
-        context = context,
+    return apiClient.safeApiCall(
         builder = {
             method = HttpMethod.Get
-            url("$serverUrl/api/auth/config")
+            url("$serverUrl/api/http/auth/config")
         },
-        onUnauthorized = {},
         serializer = { it.body<fyi.fortime.otppushmobile.data.AuthConfig>() }
     )
 }
 
 private fun performLogin(
     scope: CoroutineScope,
-    client: HttpClient,
+    apiClient: ApiClient,
     persistentStore: PersistentStore,
     context: Context,
     idToken: String,
@@ -269,17 +263,16 @@ private fun performLogin(
         val fcmToken = try {
             FirebaseMessaging.getInstance().token.await()
         } catch (e: Exception) {
-            Log.e("Auth", "FCM token error", e)
+            Log.e(LOG_TAG, "FCM token error", e)
             null
         }
 
         val createDevice = !persistentStore.isDeviceCreated()
 
-        val response = client.safeApiCall(
-            context = context,
+        val response = apiClient.safeApiCall(
             builder = {
                 method = HttpMethod.Post
-                url("$baseUrl/api/auth/google")
+                url("$baseUrl/api/http/auth/google")
                 contentType(Application.Json)
                 setBody(
                     GoogleAuthRequest(
@@ -290,7 +283,6 @@ private fun performLogin(
                     )
                 )
             },
-            onUnauthorized = { /* Login call shouldn't trigger unauthorized logout typically */ },
             serializer = { it }
         )
 
@@ -306,7 +298,7 @@ private fun performLogin(
                 Toast.makeText(context, "Device conflict, retrying with new ID", Toast.LENGTH_SHORT)
                     .show()
                 persistentStore.generateNewDeviceUuid()
-                performLogin(scope, client, persistentStore, context, idToken, onSuccess)
+                performLogin(scope, apiClient, persistentStore, context, idToken, onSuccess)
             }
         }
     }

@@ -3,6 +3,8 @@
 package fyi.fortime.otppushmobile.data
 
 import kotlinx.serialization.Serializable
+import java.util.UUID
+import kotlin.time.Duration
 
 @Serializable
 data class AuthConfig(val google_client_id: String)
@@ -116,4 +118,34 @@ data class CachedOtpRecords(
     val records: List<OtpRecordDto>,
     val page: Long,
     val hasMore: Boolean,
+)
+
+@Serializable
+data class RawBleClientConfig(
+    val serviceUuid: String,
+    val requestCharUuid: String,
+    val responseCharUuid: String,
+    val readyDescriptorUuid: String,
+    val scanningTimeout: Duration,
+)
+
+data class BleClientConfig(
+    var serviceUuid: UUID,
+    var requestCharUuid: UUID,
+    var responseCharUuid: UUID,
+    var readyDescriptorUuid: UUID,
+    var scanningTimeout: Duration,
+)
+
+@Serializable
+data class RawBleServerConfig(
+    val serviceUuid: String,
+    val requestCharUuid: String,
+    val responseCharUuid: String,
+)
+
+data class BleServerConfig(
+    var serviceUuid: UUID,
+    var requestCharUuid: UUID,
+    var responseCharUuid: UUID,
 )

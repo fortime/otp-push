@@ -1,9 +1,10 @@
-package fyi.fortime.otppushmobile.ui.screens
+package fyi.fortime.otppushmobile.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -12,9 +13,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -29,13 +33,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import fyi.fortime.otppushmobile.AppContext
 import fyi.fortime.otppushmobile.data.OtpRequestDto
 import fyi.fortime.otppushmobile.data.PaginatedResponse
-import fyi.fortime.otppushmobile.data.PersistentStore
-import fyi.fortime.otppushmobile.util.safeApiCall
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.url
@@ -44,12 +45,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun NotificationsTab(
-    client: HttpClient,
-    persistentStore: PersistentStore,
-    onSelectRequest: (OtpRequestDto) -> Unit,
-    onUnauthorized: () -> Unit
+fun RequestsScreen(
+    appContext: AppContext,
 ) {
+    val apiClient = appContext.apiClient
+    val persistentStore = appContext.persistentStore
     var items by remember { mutableStateOf(listOf<OtpRequestDto>()) }
     var page by remember { mutableLongStateOf(1L) }
     var hasMore by remember { mutableStateOf(true) }
@@ -57,7 +57,6 @@ fun NotificationsTab(
     var isRefreshing by remember { mutableStateOf(false) }
 
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val listState = rememberLazyListState()
 
     fun setRefreshing(b: Boolean) {
@@ -72,17 +71,15 @@ fun NotificationsTab(
             hasMore = true
         }
 
-        val token = persistentStore.getToken() ?: return onUnauthorized()
+        val token = persistentStore.getToken() ?: return
         val baseUrl = persistentStore.getServerUrl()
 
-        client.safeApiCall(
-            context = context,
+        apiClient.safeApiCall(
             builder = {
                 method = HttpMethod.Get
-                url("$baseUrl/api/mobile/requests?page=$page&limit=20")
+                url("$baseUrl/api/http/mobile/requests?page=$page&limit=20")
                 header("Authorization", "Bearer $token")
             },
-            onUnauthorized = onUnauthorized,
             serializer = { it.body<PaginatedResponse<OtpRequestDto>>() }
         )?.let { paginated ->
             items = if (reset) {
@@ -134,26 +131,49 @@ fun NotificationsTab(
             items(items) { item ->
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = { onSelectRequest(item) }
+                    onClick = {
+                        appContext.history.push(
+                            httpOtpSubmissionScreenHistoryRecord(
+                                appContext,
+                                item
+                            )
+                        )
+                    }
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            "Service: ${item.otp_record_name} (#${item.id.takeLast(6)})",
-                            style = MaterialTheme.typography.titleMedium
-                        )
-                        Text(
-                            "Requested at: ${item.created_at}",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            if (item.pub_key.isNullOrBlank()) {
-                                "Tap to capture and submit OTP"
-                            } else {
-                                "Tap to enter and submit encrypted password"
-                            },
-                            color = MaterialTheme.colorScheme.primary
-                        )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Service: ${item.otp_record_name} (#${item.id.takeLast(6)})",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Text(
+                                "Requested at: ${item.created_at}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                if (item.pub_key.isNullOrBlank()) {
+                                    "Tap to capture and submit OTP"
+                                } else {
+                                    "Tap to enter and submit encrypted password"
+                                },
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }

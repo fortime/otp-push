@@ -1,4 +1,4 @@
-package fyi.fortime.otppushmobile.ui.screens
+package fyi.fortime.otppushmobile.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +13,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
@@ -40,15 +41,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import fyi.fortime.otppushmobile.AppContext
+import fyi.fortime.otppushmobile.HistoryRecord
 import fyi.fortime.otppushmobile.data.CachedOtpRecords
 import fyi.fortime.otppushmobile.data.CreateOtpRecordRequest
 import fyi.fortime.otppushmobile.data.OtpRecordDto
 import fyi.fortime.otppushmobile.data.PaginatedResponse
-import fyi.fortime.otppushmobile.data.PersistentStore
-import fyi.fortime.otppushmobile.util.safeApiCall
-import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
@@ -61,13 +60,11 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OtpRecordsTab(
-    client: HttpClient,
-    persistentStore: PersistentStore,
-    onSelectRecord: (OtpRecordDto) -> Unit,
-    onFillRecord: (OtpRecordDto) -> Unit,
-    onUnauthorized: () -> Unit
+fun RecordsScreen(
+    appContext: AppContext,
 ) {
+    val apiClient = appContext.apiClient
+    val persistentStore = appContext.persistentStore
     var items by remember { mutableStateOf(listOf<OtpRecordDto>()) }
     var page by remember { mutableLongStateOf(1L) }
     var hasMore by remember { mutableStateOf(true) }
@@ -77,7 +74,6 @@ fun OtpRecordsTab(
     var recordToDelete by remember { mutableStateOf<OtpRecordDto?>(null) }
 
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
     val listState = rememberLazyListState()
 
     fun setShowAddDialog(b: Boolean) {
@@ -96,17 +92,15 @@ fun OtpRecordsTab(
             hasMore = true
         }
 
-        val token = persistentStore.getToken() ?: return onUnauthorized()
+        val token = persistentStore.getToken() ?: return
         val baseUrl = persistentStore.getServerUrl()
 
-        val paginated = client.safeApiCall(
-            context = context,
+        val paginated = apiClient.safeApiCall(
             builder = {
                 method = HttpMethod.Get
-                url("$baseUrl/api/otp-records?page=$page&limit=20")
+                url("$baseUrl/api/http/otp-records?page=$page&limit=20")
                 header("Authorization", "Bearer $token")
             },
-            onUnauthorized = onUnauthorized,
             serializer = { it.body<PaginatedResponse<OtpRecordDto>>() }
         )
         if (paginated == null) {
@@ -168,9 +162,14 @@ fun OtpRecordsTab(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(items) { item ->
+                    val name = item.name
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        onClick = { onSelectRecord(item) }
+                        onClick = {
+                            appContext.history.push(HistoryRecord("Tokens for $name", true, {
+                                RecordTokensScreen(appContext, item)
+                            }))
+                        }
                     ) {
                         Row(
                             modifier = Modifier
@@ -180,7 +179,7 @@ fun OtpRecordsTab(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(item.name, style = MaterialTheme.typography.titleMedium)
+                                Text(name, style = MaterialTheme.typography.titleMedium)
                                 Text(
                                     item.service_identifier,
                                     style = MaterialTheme.typography.bodyMedium
@@ -189,7 +188,16 @@ fun OtpRecordsTab(
 
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Button(
-                                    onClick = { onFillRecord(item) },
+                                    onClick = {
+                                        appContext.history.push(
+                                            HistoryRecord(
+                                                "Fill OTP for $name",
+                                                true,
+                                                {
+                                                    OtpFillScreen(item.service_identifier)
+                                                })
+                                        )
+                                    },
                                     contentPadding = PaddingValues(
                                         horizontal = 12.dp,
                                         vertical = 0.dp
@@ -206,6 +214,12 @@ fun OtpRecordsTab(
                                         tint = MaterialTheme.colorScheme.error
                                     )
                                 }
+
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
                             }
                         }
                     }
@@ -244,17 +258,15 @@ fun OtpRecordsTab(
                     onClick = {
                         val record = recordToDelete ?: return@Button
                         scope.launch {
-                            val token = persistentStore.getToken() ?: return@launch onUnauthorized()
+                            val token = persistentStore.getToken() ?: return@launch
                             val baseUrl = persistentStore.getServerUrl()
 
-                            client.safeApiCall(
-                                context = context,
+                            apiClient.safeApiCall(
                                 builder = {
                                     method = HttpMethod.Delete
-                                    url("$baseUrl/api/otp-records/${record.id}")
+                                    url("$baseUrl/api/http/otp-records/${record.id}")
                                     header("Authorization", "Bearer $token")
                                 },
-                                onUnauthorized = onUnauthorized,
                                 successCode = HttpStatusCode.NoContent,
                                 serializer = { /* no body */ }
                             )?.let {
@@ -281,19 +293,17 @@ fun OtpRecordsTab(
             onDismiss = { setShowAddDialog(false) },
             onConfirm = { name, identifier ->
                 scope.launch {
-                    val token = persistentStore.getToken() ?: return@launch onUnauthorized()
+                    val token = persistentStore.getToken() ?: return@launch
                     val baseUrl = persistentStore.getServerUrl()
 
-                    client.safeApiCall(
-                        context = context,
+                    apiClient.safeApiCall(
                         builder = {
                             method = HttpMethod.Post
-                            url("$baseUrl/api/otp-records")
+                            url("$baseUrl/api/http/otp-records")
                             header("Authorization", "Bearer $token")
                             contentType(ContentType.Application.Json)
                             setBody(CreateOtpRecordRequest(name, identifier))
                         },
-                        onUnauthorized = onUnauthorized,
                         successCode = HttpStatusCode.Created,
                         serializer = { /* no body */ }
                     )?.let {

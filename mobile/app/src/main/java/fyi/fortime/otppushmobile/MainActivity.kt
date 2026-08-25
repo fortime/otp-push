@@ -1,236 +1,266 @@
 package fyi.fortime.otppushmobile
 
+import android.Manifest
+import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.IntentFilter
+import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
-import fyi.fortime.otppushmobile.data.OtpRecordDto
 import fyi.fortime.otppushmobile.data.OtpRequestDto
-import fyi.fortime.otppushmobile.data.PersistentStore
-import fyi.fortime.otppushmobile.ui.screens.LoginScreen
-import fyi.fortime.otppushmobile.ui.screens.MainContainerScreen
-import fyi.fortime.otppushmobile.ui.screens.OtpFillScreen
-import fyi.fortime.otppushmobile.ui.screens.OtpRecordTokensScreen
-import fyi.fortime.otppushmobile.ui.screens.OtpSubmissionScreen
+import fyi.fortime.otppushmobile.service.BleGattService
+import fyi.fortime.otppushmobile.ui.screen.MainContainerScreen
+import fyi.fortime.otppushmobile.ui.screen.bleOtpSubmissionScreenHistoryRecord
+import fyi.fortime.otppushmobile.ui.screen.httpOtpSubmissionScreenHistoryRecord
 import fyi.fortime.otppushmobile.ui.theme.OtpPushMobileTheme
-import fyi.fortime.otppushmobile.util.safeApiCall
-import fyi.fortime.otppushmobile.util.sharedHttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.header
-import io.ktor.client.request.setBody
 import io.ktor.client.request.url
-import io.ktor.http.ContentType
 import io.ktor.http.HttpMethod
-import io.ktor.http.contentType
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
-    private val client = sharedHttpClient
+private const val LOG_TAG = "MainActivity"
 
-    private lateinit var persistentStore: PersistentStore
-    private var pendingRequestId: String? = null
+class MainActivity : ComponentActivity() {
+    private lateinit var appContext: AppContext
+    private var bleStarted = false
+
+    private val requestNotifyPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        if (!it) {
+            Log.w(LOG_TAG, "Notification permissions denied")
+        }
+    }
+
+    private val requestBlePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        blePermissionCallback(it)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        persistentStore = PersistentStore(this)
-        pendingRequestId = intent.getStringExtra("request_id")
+        appContext = AppContext(applicationContext)
+
         enableEdgeToEdge()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            requestNotifyPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+
+        // Automatically start BLE service if enabled in settings
+        checkAndStartBleService()
+
         setContent {
             OtpPushMobileTheme {
-                MainApp(
-                    initialRequestId = pendingRequestId
+                MainApp(intent)
+            }
+        }
+    }
+
+    private fun blePermissionCallback(permissions: Map<String, @JvmSuppressWildcards Boolean>) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val advertiseGranted = permissions[Manifest.permission.BLUETOOTH_ADVERTISE] == true
+            val connectGranted = permissions[Manifest.permission.BLUETOOTH_CONNECT] == true
+            val scanGranted = permissions[Manifest.permission.BLUETOOTH_SCAN] == true
+            val accessCoarseLocationGranted =
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            val accessFineLocationGranted =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+
+            if (advertiseGranted && connectGranted && scanGranted && accessCoarseLocationGranted && accessFineLocationGranted) {
+                startBleService()
+            } else {
+                Log.w(
+                    LOG_TAG,
+                    "Bluetooth permissions denied[advertise: $advertiseGranted, connect: $connectGranted, scan: $scanGranted, accessCoarseLocation: $accessCoarseLocationGranted, accessFineLocationGranted: $accessFineLocationGranted], cannot start BLE service"
+                )
+                appContext.saveBleEnabled(false)
+            }
+        } else {
+            val accessCoarseLocationGranted =
+                permissions[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+            val accessFineLocationGranted =
+                permissions[Manifest.permission.ACCESS_FINE_LOCATION] == true
+
+            if (accessCoarseLocationGranted && accessFineLocationGranted) {
+                startBleService()
+            } else {
+                Log.w(
+                    LOG_TAG,
+                    "Bluetooth permissions denied[accessCoarseLocation: $accessCoarseLocationGranted, accessFineLocationGranted: $accessFineLocationGranted], cannot start BLE service"
+                )
+                appContext.saveBleEnabled(false)
+            }
+        }
+    }
+
+    private fun checkAndStartBleService() {
+        if (!appContext.persistentStore.isBleEnabled() || bleStarted) return
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            requestBlePermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_ADVERTISE,
+                    Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.BLUETOOTH_SCAN,
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                )
+            )
+        } else {
+            requestBlePermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_COARSE_LOCATION,
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                )
+            )
+        }
+    }
+
+    private fun startBleService() {
+        Log.i(LOG_TAG, "Starting BLE GATT Server Service")
+        val intent = Intent(this, BleGattService::class.java)
+        startForegroundService(intent)
+        sendBroadcast(IntentManager(applicationContext).genBleFetchDevicesBroadcastIntent())
+        bleStarted = true
+    }
+
+    private fun stopBleService() {
+        Log.i(LOG_TAG, "Stopping BLE GATT Server Service")
+        val intent = Intent(this, BleGattService::class.java)
+        stopService(intent)
+        bleStarted = false
+    }
+
+    private suspend fun handleHttpRequest(requestId: String) {
+        val token = appContext.persistentStore.getToken()
+        val baseUrl = appContext.persistentStore.getServerUrl()
+        if (token != null) {
+            appContext.apiClient.safeApiCall(builder = {
+                method = HttpMethod.Get
+                url("$baseUrl/api/http/mobile/requests/$requestId")
+                header("Authorization", "Bearer $token")
+            }, serializer = { response -> response.body<OtpRequestDto>() })?.let { request ->
+                appContext.history.push(
+                    httpOtpSubmissionScreenHistoryRecord(
+                        appContext, request
+                    )
                 )
             }
         }
     }
 
-    override fun onNewIntent(intent: Intent) {
-        super.onNewIntent(intent)
+    private fun handleBleToggle() {
+        if (appContext.persistentStore.isBleEnabled() && !bleStarted) {
+            checkAndStartBleService()
+        } else if (!appContext.persistentStore.isBleEnabled() && bleStarted) {
+            stopBleService()
+        }
+    }
+
+    private fun handleBleRequest(
+        deviceAddress: String,
+        deviceName: String,
+        requestId: String,
+        name: String,
+        serviceIdentifier: String,
+        pubKey: String?
+    ) {
+        Log.d(
+            LOG_TAG,
+            "receive a ble request: $deviceName[$deviceAddress], $requestId, $name, $serviceIdentifier, $pubKey"
+        )
+        appContext.history.push(
+            bleOtpSubmissionScreenHistoryRecord(
+                appContext, deviceAddress, deviceName, requestId, name, serviceIdentifier, pubKey
+            )
+        )
+    }
+
+    private fun compatRegisterReceiver(receiver: BroadcastReceiver, filter: IntentFilter) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+        } else {
+            @SuppressLint("UnspecifiedRegisterReceiverFlag") registerReceiver(receiver, filter)
+        }
     }
 
     @Composable
-    fun MainApp(initialRequestId: String? = null) {
-        val context = LocalContext.current
-        var isLoggedIn by remember { mutableStateOf(persistentStore.getToken() != null) }
-        var currentUser by remember { mutableStateOf(persistentStore.getUser()) }
-        var selectedOtpRequest by remember {
-            mutableStateOf<OtpRequestDto?>(
-                null
-            )
-        }
+    fun MainApp(intent: Intent) {
 
-        LaunchedEffect(initialRequestId) {
-            if (initialRequestId != null) {
-                val token = persistentStore.getToken()
-                val baseUrl = persistentStore.getServerUrl()
-                if (token != null) {
-                    client.safeApiCall(
-                        context = context,
-                        builder = {
-                            method = HttpMethod.Get
-                            url("$baseUrl/api/mobile/requests/$initialRequestId")
-                            header("Authorization", "Bearer $token")
-                        },
-                        onUnauthorized = { /* handle logout */ },
-                        serializer = { response -> response.body<OtpRequestDto>() }
-                    )?.let { request ->
-                        selectedOtpRequest = request
-                    }
-                }
-            }
-        }
-        var selectedOtpRecord by remember {
-            mutableStateOf<OtpRecordDto?>(
-                null
-            )
-        }
-        var fillOtpRecord by remember {
-            mutableStateOf<OtpRecordDto?>(
-                null
-            )
-        }
-        var selectedTab by remember { mutableIntStateOf(0) }
         val scope = rememberCoroutineScope()
+        LaunchedEffect(intent) {
+            val intentManager = IntentManager(applicationContext)
+            intentManager.genHttpRequestListener {
+                scope.launch { handleHttpRequest(it) }
+            }(intent)
+            intentManager.genBleRequestListener { deviceAddress, deviceName, requestId, name, serviceIdentifier, pubKey ->
+                handleBleRequest(
+                    deviceAddress, deviceName, requestId, name, serviceIdentifier, pubKey
+                )
+            }(intent)
+        }
 
-        fun handleLogout() {
-            val token = persistentStore.getToken()
-            val baseUrl = persistentStore.getServerUrl()
-            val deviceId = persistentStore.getDeviceUuid()
+        SetupIntentReceivers()
 
-            if (token != null) {
-                scope.launch {
-                    client.safeApiCall(
-                        context = context,
-                        builder = {
-                            method = HttpMethod.Delete
-                            url("$baseUrl/api/mobile/logout")
-                            header("Authorization", "Bearer $token")
-                            contentType(ContentType.Application.Json)
-                            setBody(fyi.fortime.otppushmobile.data.LogoutRequest(device_id = deviceId))
-                        },
-                        onUnauthorized = { /* already logging out */ },
-                        serializer = { }
-                    )
+        MainContainerScreen(appContext = appContext)
+    }
+
+    @Composable
+    fun SetupIntentReceivers() {
+        val context = LocalContext.current
+
+        // Register broadcast receiver for incoming BLE OTP Requests
+        DisposableEffect(context) {
+            Log.i(LOG_TAG, "Registering receivers")
+
+            val intentManager = IntentManager(context)
+
+            val bleToggleReceiver = intentManager.genBleToggleReceiver {
+                handleBleToggle()
+            }
+            val bleScanningStateReceiver = intentManager.genBleScanningStateReceiver { state ->
+                Log.d(LOG_TAG, "Update scanning state: $state")
+                appContext.bleScanning = state
+            }
+            val bleDeviceClearedReceiver = intentManager.genBleDeviceClearedReceiver {
+                appContext.bleDevices.clear()
+            }
+            val bleDeviceAddedReceiver = intentManager.genBleDeviceAddedReceiver { name, address ->
+                appContext.bleDevices.add(Pair(name, address))
+            }
+            val bleDeviceRemovedReceiver = intentManager.genBleDeviceRemovedReceiver { address ->
+                appContext.bleDevices.removeIf { d ->
+                    d.second == address
                 }
             }
 
-            persistentStore.clearCredentials()
-            isLoggedIn = false
-            selectedOtpRequest = null
-            currentUser = null
-            selectedOtpRecord = null
-            fillOtpRecord = null
-            selectedTab = 0
-        }
+            compatRegisterReceiver(bleToggleReceiver.first, bleToggleReceiver.second)
+            compatRegisterReceiver(bleScanningStateReceiver.first, bleScanningStateReceiver.second)
+            compatRegisterReceiver(bleDeviceClearedReceiver.first, bleDeviceClearedReceiver.second)
+            compatRegisterReceiver(bleDeviceAddedReceiver.first, bleDeviceAddedReceiver.second)
+            compatRegisterReceiver(bleDeviceRemovedReceiver.first, bleDeviceRemovedReceiver.second)
 
-        fun setSelectedOtpRecord(r: OtpRecordDto?) {
-            selectedOtpRecord = r
-        }
-
-        fun setFillOtpRecord(r: OtpRecordDto?) {
-            fillOtpRecord = r
-        }
-
-        fun setSelectedOtpRequest(r: OtpRequestDto?) {
-            selectedOtpRequest = r
-        }
-
-        fun setSelectedTab(t: Int) {
-            selectedTab = t
-        }
-
-        // Fetch user info on startup if missing
-        LaunchedEffect(isLoggedIn) {
-            if (isLoggedIn && currentUser == null) {
-                val token = persistentStore.getToken()
-                val baseUrl = persistentStore.getServerUrl()
-                if (token != null) {
-                    client.safeApiCall(
-                        context = context,
-                        builder = {
-                            method = HttpMethod.Get
-                            url("$baseUrl/api/users/me")
-                            header("Authorization", "Bearer $token")
-                        },
-                        onUnauthorized = { handleLogout() },
-                        serializer = { it.body<fyi.fortime.otppushmobile.data.UserDto>() }
-                    )?.let { user ->
-                        currentUser = user
-                        persistentStore.saveUser(user)
-                    }
-                }
+            onDispose {
+                Log.i(LOG_TAG, "Unregistering receivers")
+                context.unregisterReceiver(bleDeviceRemovedReceiver.first)
+                context.unregisterReceiver(bleDeviceAddedReceiver.first)
+                context.unregisterReceiver(bleDeviceClearedReceiver.first)
+                context.unregisterReceiver(bleScanningStateReceiver.first)
+                context.unregisterReceiver(bleToggleReceiver.first)
             }
-        }
-
-        if (!isLoggedIn) {
-            LoginScreen(
-                client = client,
-                persistentStore = persistentStore,
-                onLoginSuccess = { user ->
-                    currentUser = user
-                    isLoggedIn = true
-                }
-            )
-        } else if (selectedOtpRequest != null) {
-            BackHandler {
-                setSelectedOtpRequest(null)
-            }
-            OtpSubmissionScreen(
-                client = client,
-                persistentStore = persistentStore,
-                currentRequestId = selectedOtpRequest!!.id,
-                otpRecordName = selectedOtpRequest!!.otp_record_name,
-                serviceIdentifier = selectedOtpRequest!!.service_identifier,
-                pubKey = selectedOtpRequest!!.pub_key,
-                onUnauthorized = { handleLogout() },
-                onBack = { setSelectedOtpRequest(null) },
-                onSuccess = { setSelectedOtpRequest(null) }
-            )
-        } else if (fillOtpRecord != null) {
-            BackHandler {
-                setFillOtpRecord(null)
-            }
-            OtpFillScreen(
-                otpRecordName = fillOtpRecord!!.name,
-                serviceIdentifier = fillOtpRecord!!.service_identifier,
-                onBack = { setFillOtpRecord(null) }
-            )
-        } else if (selectedOtpRecord != null) {
-            BackHandler {
-                setSelectedOtpRecord(null)
-            }
-            OtpRecordTokensScreen(
-                client = client,
-                persistentStore = persistentStore,
-                otpRecordId = selectedOtpRecord!!.id,
-                otpRecordName = selectedOtpRecord!!.name,
-                onBack = { setSelectedOtpRecord(null) },
-                onUnauthorized = { handleLogout() }
-            )
-        } else {
-            MainContainerScreen(
-                client = client,
-                persistentStore = persistentStore,
-                currentUser = currentUser,
-                selectedTab = selectedTab,
-                onTabSelected = { setSelectedTab(it) },
-                onSelectRequest = { setSelectedOtpRequest(it) },
-                onSelectOtpRecord = { setSelectedOtpRecord(it) },
-                onFillOtpRecord = { setFillOtpRecord(it) },
-                onUnauthorized = { handleLogout() },
-                onLogout = { handleLogout() }
-            )
         }
     }
 }

@@ -3,18 +3,19 @@ plugins {
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.ktlint)
 }
 
 android {
     namespace = "fyi.fortime.otppushmobile"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "fyi.fortime.otppushmobile"
-        minSdk = 26
-        targetSdk = 35
-        versionCode = 2
-        versionName = "0.1.1"
+        minSdk = 30
+        targetSdk = 37
+        versionCode = 3
+        versionName = "0.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -25,12 +26,21 @@ android {
         buildConfigField("Boolean", "MOCK_LOGIN", mockLogin.toString())
     }
 
+    flavorDimensions += "environment"
+
+    productFlavors {
+        create("dev") {
+            dimension = "environment"
+            applicationIdSuffix = ".dev"
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
-                "proguard-rules.pro"
+                "proguard-rules.pro",
             )
         }
     }
@@ -53,6 +63,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.fragment)
 
     // Firebase
     implementation(platform(libs.firebase.bom))
@@ -83,4 +94,12 @@ dependencies {
     androidTestImplementation(libs.androidx.junit)
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
+}
+
+ktlint {
+    android = true
+    outputToConsole = true
+    reporters {
+        reporter(org.jlleitschuh.gradle.ktlint.reporter.ReporterType.HTML)
+    }
 }

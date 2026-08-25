@@ -1,4 +1,4 @@
-package fyi.fortime.otppushmobile.ui.screens
+package fyi.fortime.otppushmobile.ui.screen
 
 import android.content.ClipboardManager
 import android.content.Context
@@ -12,19 +12,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -43,10 +37,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import fyi.fortime.otppushmobile.data.PersistentStore
+import fyi.fortime.otppushmobile.AppContext
+import fyi.fortime.otppushmobile.HistoryRecord
+import fyi.fortime.otppushmobile.IntentManager
+import fyi.fortime.otppushmobile.data.OtpRequestDto
 import fyi.fortime.otppushmobile.data.SubmitOtpRequest
-import fyi.fortime.otppushmobile.util.safeApiCall
-import io.ktor.client.HttpClient
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
 import io.ktor.client.request.url
@@ -54,7 +49,6 @@ import io.ktor.http.ContentType.Application
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo
 import org.bouncycastle.cert.X509CertificateHolder
@@ -75,6 +69,7 @@ import javax.crypto.spec.OAEPParameterSpec
 import javax.crypto.spec.PSource
 import javax.crypto.spec.SecretKeySpec
 
+private const val LOG_TAG = "OtpSubmissionScreen"
 private const val EC_ENVELOPE_VERSION = "v1"
 private const val EC_ENVELOPE_ALGORITHM = "ecdh-aes-256-gcm"
 private const val EC_ENVELOPE_INFO = "otp-push password ecdh-aes-256-gcm v1"
@@ -85,209 +80,223 @@ private const val RSA_ENVELOPE_INFO = "otp-push password rsa-oaep-sha256 v1"
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun OtpSubmissionScreen(
-    client: HttpClient,
-    persistentStore: PersistentStore,
-    currentRequestId: String?,
-    otpRecordName: String?,
-    serviceIdentifier: String?,
+    appContext: AppContext,
+    requestId: String,
+    serviceIdentifier: String,
     pubKey: String?,
-    onUnauthorized: () -> Unit,
-    onBack: () -> Unit,
-    onSuccess: () -> Unit
+    submit: suspend (Context, String, () -> Unit) -> Unit
 ) {
     var accountName by remember { mutableStateOf("") }
     var secretValue by remember { mutableStateOf("") }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val isPasswordRequest = !pubKey.isNullOrBlank()
+    val onSuccess = {
+        appContext.history.pop()
+    }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        if (isPasswordRequest) {
-                            "Submit Password for $otpRecordName"
-                        } else {
-                            "Submit OTP for $otpRecordName"
-                        }
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                }
-            )
-        }
-    ) { innerPadding ->
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp)
+    ) {
         Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .padding(horizontal = 16.dp)
+            modifier = Modifier.fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            if (currentRequestId != null) {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text(
-                        if (isPasswordRequest) "Awaiting Password for Request" else "Awaiting OTP for Request",
-                        style = MaterialTheme.typography.labelLarge,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Surface(
-                        color = MaterialTheme.colorScheme.primaryContainer,
-                        shape = MaterialTheme.shapes.medium,
-                        modifier = Modifier.padding(vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = "#${currentRequestId.takeLast(6)}",
-                            style = MaterialTheme.typography.displayLarge.copy(
-                                fontWeight = FontWeight.Bold,
-                                letterSpacing = 2.sp
-                            ),
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
-                        )
-                    }
-                }
-            } else {
+            Text(
+                if (isPasswordRequest) "Awaiting Password for Request" else "Awaiting OTP for Request",
+                style = MaterialTheme.typography.labelLarge,
+                color = MaterialTheme.colorScheme.secondary
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Surface(
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = MaterialTheme.shapes.medium,
+                modifier = Modifier.padding(vertical = 8.dp)
+            ) {
                 Text(
-                    "Waiting for incoming requests...",
-                    style = MaterialTheme.typography.bodyMedium
+                    text = "#${requestId.takeLast(6)}",
+                    style = MaterialTheme.typography.displayLarge.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp
+                    ),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-            Text("Account ($serviceIdentifier)")
-            TextField(
-                value = accountName,
-                onValueChange = {
-                    accountName = it
-                    if (!isPasswordRequest && it == serviceIdentifier) {
-                        val clipboardOtp = getOtpFromClipboard(context)
-                        if (clipboardOtp != null) {
-                            secretValue = clipboardOtp
-                        }
+        Text("Account ($serviceIdentifier)")
+        TextField(
+            value = accountName,
+            onValueChange = {
+                accountName = it
+                if (!isPasswordRequest && it == serviceIdentifier) {
+                    val clipboardOtp = getOtpFromClipboard(context)
+                    if (clipboardOtp != null) {
+                        secretValue = clipboardOtp
                     }
+                }
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentType = ContentType.Username
+                }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Text(if (isPasswordRequest) "Password" else "OTP")
+        TextField(
+            value = secretValue,
+            onValueChange = { secretValue = it },
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentType =
+                        if (isPasswordRequest) ContentType.Password else ContentType.SmsOtpCode
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics {
-                        contentType = ContentType.Username
-                    }
+            visualTransformation =
+                if (isPasswordRequest) PasswordVisualTransformation() else VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(
+                keyboardType = if (isPasswordRequest) KeyboardType.Password else KeyboardType.Number
             )
+        )
 
-            Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(32.dp))
 
-            Text(if (isPasswordRequest) "Password" else "OTP")
-            TextField(
-                value = secretValue,
-                onValueChange = { secretValue = it },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .semantics {
-                        contentType =
-                            if (isPasswordRequest) ContentType.Password else ContentType.SmsOtpCode
-                    },
-                visualTransformation =
-                    if (isPasswordRequest) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardOptions = KeyboardOptions(
-                    keyboardType = if (isPasswordRequest) KeyboardType.Password else KeyboardType.Number
-                )
-            )
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            Button(
-                onClick = {
-                    if (currentRequestId != null && secretValue.isNotBlank()) {
-                        submitOtp(
-                            scope,
-                            client,
-                            persistentStore,
+        Button(
+            onClick = click@{
+                if (secretValue.isNotBlank()) {
+                    val encryptedValue = try {
+                        if (pubKey.isNullOrBlank()) {
+                            secretValue
+                        } else {
+                            encryptWithPublicKey(secretValue, pubKey)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(LOG_TAG, "failed to encrypt password", e)
+                        Toast.makeText(
                             context,
-                            currentRequestId,
-                            secretValue,
-                            pubKey,
-                            onUnauthorized
-                        ) {
-                            secretValue = ""
+                            "Failed to encrypt password",
+                            Toast.LENGTH_LONG
+                        ).show()
+                        return@click
+                    }
+                    scope.launch {
+                        submit(context, encryptedValue) {
                             onSuccess()
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                enabled = currentRequestId != null && secretValue.isNotBlank()
-            ) {
-                Text(if (isPasswordRequest) "Submit Password" else "Submit OTP")
-            }
-
-            if (!isPasswordRequest) {
-                Spacer(modifier = Modifier.height(16.dp))
-
-                OutlinedButton(
-                    onClick = {
-                        val otp = getOtpFromClipboard(context)
-                        if (otp != null) {
-                            secretValue = otp
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Check Clipboard for OTP")
                 }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = secretValue.isNotBlank()
+        ) {
+            Text(if (isPasswordRequest) "Submit Password" else "Submit OTP")
+        }
+
+        if (!isPasswordRequest) {
+            Spacer(modifier = Modifier.height(16.dp))
+
+            OutlinedButton(
+                onClick = {
+                    val otp = getOtpFromClipboard(context)
+                    if (otp != null) {
+                        secretValue = otp
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Check Clipboard for OTP")
             }
         }
     }
 }
 
-private fun submitOtp(
-    scope: CoroutineScope,
-    client: HttpClient,
-    persistentStore: PersistentStore,
-    context: Context,
-    requestId: String,
-    secretValue: String,
-    pubKey: String?,
-    onUnauthorized: () -> Unit,
-    onSuccess: () -> Unit
-) {
-    scope.launch {
-        val token = persistentStore.getToken() ?: return@launch onUnauthorized()
-        val baseUrl = persistentStore.getServerUrl()
-        val submittedValue = try {
-            if (pubKey.isNullOrBlank()) {
-                secretValue
-            } else {
-                encryptWithPublicKey(secretValue, pubKey)
-            }
-        } catch (e: Exception) {
-            Log.w("OtpPush", "failed to encrypt password", e)
-            Toast.makeText(context, "Failed to encrypt password", Toast.LENGTH_LONG).show()
-            return@launch
+fun httpOtpSubmissionScreenHistoryRecord(
+    appContext: AppContext,
+    request: OtpRequestDto
+): HistoryRecord {
+    val name = request.otp_record_name
+    val title = if (!request.pub_key.isNullOrBlank()) {
+        "[HTTP]Submit Password for $name"
+    } else {
+        "[HTTP]Submit OTP for $name"
+    }
+    return HistoryRecord(title, true, {
+        OtpSubmissionScreen(
+            appContext,
+            request.id,
+            request.service_identifier,
+            request.pub_key,
+        ) { _, secretValue, onSuccess ->
+            httpSubmitOtp(appContext, request.id, secretValue, onSuccess)
         }
+    })
+}
 
-        client.safeApiCall(
-            context = context,
-            builder = {
-                method = HttpMethod.Post
-                url("$baseUrl/api/mobile/otp/submit")
-                header("Authorization", "Bearer $token")
-                contentType(Application.Json)
-                setBody(SubmitOtpRequest(requestId, submittedValue))
-            },
-            onUnauthorized = onUnauthorized,
-            successCode = HttpStatusCode.OK,
-            serializer = { /* no body */ }
-        )?.let {
-            Log.d("OtpPush", "OTP submitted successfully")
+fun bleOtpSubmissionScreenHistoryRecord(
+    appContext: AppContext,
+    deviceAddress: String,
+    deviceName: String,
+    requestId: String,
+    name: String,
+    serviceIdentifier: String,
+    pubKey: String?,
+): HistoryRecord {
+    val title = if (!pubKey.isNullOrBlank()) {
+        "[BLE-$deviceName]Submit Password for $name"
+    } else {
+        "[BLE-$deviceName]Submit OTP for $name"
+    }
+    return HistoryRecord(title, false, {
+        OtpSubmissionScreen(
+            appContext,
+            requestId,
+            serviceIdentifier,
+            pubKey,
+        ) { context, secretValue, onSuccess ->
+            context.sendBroadcast(
+                IntentManager(context).genBleResponseIntent(
+                    deviceAddress,
+                    requestId,
+                    secretValue,
+                    null
+                )
+            )
+            Log.d(LOG_TAG, "BLE OTP submitted successfully")
             onSuccess()
         }
+    })
+}
+
+private suspend fun httpSubmitOtp(
+    appContext: AppContext,
+    requestId: String,
+    secretValue: String,
+    onSuccess: () -> Unit
+) {
+    val token = appContext.persistentStore.getToken() ?: return
+    val baseUrl = appContext.persistentStore.getServerUrl()
+
+    appContext.apiClient.safeApiCall(
+        builder = {
+            method = HttpMethod.Post
+            url("$baseUrl/api/http/mobile/otp/submit")
+            header("Authorization", "Bearer $token")
+            contentType(Application.Json)
+            setBody(SubmitOtpRequest(requestId, secretValue))
+        },
+        successCode = HttpStatusCode.OK,
+        serializer = { /* no body */ }
+    )?.let {
+        Log.d(LOG_TAG, "OTP submitted successfully")
+        onSuccess()
     }
 }
 
@@ -360,8 +369,7 @@ private fun deriveEcAesKey(
     ephemeralPublicKey: ByteArray,
     info: ByteArray
 ): ByteArray {
-    val salt = ephemeralPublicKey
-    val pseudoRandomKey = hmacSha256(salt, sharedSecret)
+    val pseudoRandomKey = hmacSha256(ephemeralPublicKey, sharedSecret)
     return hmacSha256(pseudoRandomKey, info + byteArrayOf(1)).copyOf(32)
 }
 

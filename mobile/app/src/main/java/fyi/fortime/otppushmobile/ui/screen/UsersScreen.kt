@@ -1,4 +1,4 @@
-package fyi.fortime.otppushmobile.ui.screens
+package fyi.fortime.otppushmobile.ui.screen
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -36,14 +36,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import fyi.fortime.otppushmobile.AppContext
 import fyi.fortime.otppushmobile.data.PersistentStore
 import fyi.fortime.otppushmobile.data.UpdateLimitsRequest
 import fyi.fortime.otppushmobile.data.UserDto
 import fyi.fortime.otppushmobile.data.UserLimitsDto
-import fyi.fortime.otppushmobile.util.safeApiCall
-import io.ktor.client.HttpClient
+import fyi.fortime.otppushmobile.util.ApiClient
 import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
@@ -56,17 +55,16 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun UsersTab(
-    client: HttpClient,
-    persistentStore: PersistentStore,
-    onUnauthorized: () -> Unit
+fun UsersScreen(
+    appContext: AppContext
 ) {
+    val persistentStore = appContext.persistentStore
+    val apiClient = appContext.apiClient
     var users by remember { mutableStateOf(listOf<UserDto>()) }
     var selectedUser by remember { mutableStateOf<UserDto?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var isRefreshing by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
 
     fun setRefreshing(r: Boolean) {
         isRefreshing = r
@@ -78,17 +76,15 @@ fun UsersTab(
 
     suspend fun fetchUsers() {
         isLoading = true
-        val token = persistentStore.getToken() ?: return onUnauthorized()
+        val token = persistentStore.getToken() ?: return
         val baseUrl = persistentStore.getServerUrl()
 
-        client.safeApiCall(
-            context = context,
+        apiClient.safeApiCall(
             builder = {
                 method = HttpMethod.Get
-                url("$baseUrl/api/admin/users")
+                url("$baseUrl/api/http/admin/users")
                 header("Authorization", "Bearer $token")
             },
-            onUnauthorized = onUnauthorized,
             serializer = { it.body<List<UserDto>>() }
         )?.let { fetchedUsers ->
             users = fetchedUsers
@@ -150,49 +146,42 @@ fun UsersTab(
 
     if (selectedUser != null) {
         UserEditDialog(
-            client = client,
+            apiClient = apiClient,
             persistentStore = persistentStore,
             user = selectedUser!!,
             onDismiss = { setSelectedUser(null) },
-            onUnauthorized = onUnauthorized,
             onSave = onSave@{ userDto, enabled, admin, limits, maxRecordsStr, maxTokensStr ->
                 val maxRecords = maxRecordsStr.toIntOrNull() ?: return@onSave
                 val maxTokens = maxTokensStr.toIntOrNull() ?: return@onSave
                 val limits = limits // limits is UserLimitsDto?
 
                 scope.launch {
-                    val token = persistentStore.getToken() ?: return@launch onUnauthorized()
+                    val token = persistentStore.getToken() ?: return@launch
                     val baseUrl = persistentStore.getServerUrl()
                     val originalUser = userDto // Reference the passed userDto for comparison
 
                     if (enabled != originalUser.enabled) {
-                        client.safeApiCall(
-                            context = context,
+                        apiClient.safeApiCall(
                             builder = {
-
                                 method = HttpMethod.Put
-                                url("$baseUrl/api/admin/users/${originalUser.id}/enable")
+                                url("$baseUrl/api/http/admin/users/${originalUser.id}/enable")
                                 header("Authorization", "Bearer $token")
                                 contentType(ContentType.Application.Json)
                                 setBody(enabled)
                             },
-                            onUnauthorized = onUnauthorized,
                             successCode = HttpStatusCode.OK,
                             serializer = { /* no body to deserialize */ }
                         ) ?: return@launch // If call failed, stop here
                     }
                     if (admin != originalUser.admin) {
-                        client.safeApiCall(
-                            context = context,
+                        apiClient.safeApiCall(
                             builder = {
-
                                 method = HttpMethod.Put
-                                url("$baseUrl/api/admin/users/${originalUser.id}/admin")
+                                url("$baseUrl/api/http/admin/users/${originalUser.id}/admin")
                                 header("Authorization", "Bearer $token")
                                 contentType(ContentType.Application.Json)
                                 setBody(admin)
                             },
-                            onUnauthorized = onUnauthorized,
                             successCode = HttpStatusCode.OK,
                             serializer = { /* no body to deserialize */ }
                         ) ?: return@launch // If call failed, stop here
@@ -203,17 +192,14 @@ fun UsersTab(
                     val originalMaxTokens = limits?.max_tokens_per_record
 
                     if (maxRecords != originalMaxRecords || maxTokens != originalMaxTokens) {
-                        client.safeApiCall(
-                            context = context,
+                        apiClient.safeApiCall(
                             builder = {
-
                                 method = HttpMethod.Put
-                                url("$baseUrl/api/admin/users/${originalUser.id}/limits")
+                                url("$baseUrl/api/http/admin/users/${originalUser.id}/limits")
                                 header("Authorization", "Bearer $token")
                                 contentType(ContentType.Application.Json)
                                 setBody(UpdateLimitsRequest(maxRecords, maxTokens))
                             },
-                            onUnauthorized = onUnauthorized,
                             successCode = HttpStatusCode.OK,
                             serializer = { /* no body to deserialize */ }
                         ) ?: return@launch
@@ -229,11 +215,10 @@ fun UsersTab(
 
 @Composable
 fun UserEditDialog(
-    client: HttpClient,
+    apiClient: ApiClient,
     persistentStore: PersistentStore,
     user: UserDto,
     onDismiss: () -> Unit,
-    onUnauthorized: () -> Unit,
     onSave: (UserDto, Boolean, Boolean, UserLimitsDto?, String, String) -> Unit
 ) {
     var enabled by remember { mutableStateOf(user.enabled) }
@@ -242,22 +227,18 @@ fun UserEditDialog(
     var maxRecords by remember { mutableStateOf("") }
     var maxTokens by remember { mutableStateOf("") }
 
-    val context = LocalContext.current
-
     // Query limits on dialog open
     LaunchedEffect(Unit) {
-        val token = persistentStore.getToken() ?: return@LaunchedEffect onUnauthorized()
+        val token = persistentStore.getToken() ?: return@LaunchedEffect
         val baseUrl = persistentStore.getServerUrl()
 
-        client.safeApiCall(
-            context = context,
+        apiClient.safeApiCall(
             builder = {
 
                 method = HttpMethod.Get
-                url("$baseUrl/api/admin/users/${user.id}/limits")
+                url("$baseUrl/api/http/admin/users/${user.id}/limits")
                 header("Authorization", "Bearer $token")
             },
-            onUnauthorized = onUnauthorized,
             serializer = { it.body<UserLimitsDto>() }
         )?.let { fetchedLimits ->
             limits = fetchedLimits

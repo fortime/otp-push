@@ -1,4 +1,4 @@
-package fyi.fortime.otppushmobile.ui.screens
+package fyi.fortime.otppushmobile.ui.screen
 
 import android.content.ClipData
 import android.widget.Toast
@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.AlertDialog
@@ -29,10 +28,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -46,12 +44,11 @@ import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import fyi.fortime.otppushmobile.AppContext
 import fyi.fortime.otppushmobile.data.ApiAccessTokenDto
 import fyi.fortime.otppushmobile.data.CreateTokenRequest
 import fyi.fortime.otppushmobile.data.CreateTokenResponse
-import fyi.fortime.otppushmobile.data.PersistentStore
-import fyi.fortime.otppushmobile.util.safeApiCall
-import io.ktor.client.HttpClient
+import fyi.fortime.otppushmobile.data.OtpRecordDto
 import io.ktor.client.call.body
 import io.ktor.client.request.header
 import io.ktor.client.request.setBody
@@ -64,18 +61,20 @@ import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun OtpRecordTokensScreen(
-    client: HttpClient,
-    persistentStore: PersistentStore,
-    otpRecordId: String,
-    otpRecordName: String,
-    onBack: () -> Unit,
-    onUnauthorized: () -> Unit
+fun RecordTokensScreen(
+    appContext: AppContext,
+    otpRecord: OtpRecordDto,
 ) {
+    val apiClient = appContext.apiClient
+    val persistentStore = appContext.persistentStore
+    val otpRecordId = otpRecord.id
     var tokens by remember { mutableStateOf<List<ApiAccessTokenDto>>(listOf()) }
     var isLoading by remember { mutableStateOf(false) }
+    var isRefreshing by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
     var createdTokenResponse by remember { mutableStateOf<CreateTokenResponse?>(null) }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     fun setShowAddDialog(b: Boolean) {
         showAddDialog = b
@@ -85,128 +84,125 @@ fun OtpRecordTokensScreen(
         createdTokenResponse = r
     }
 
-    val scope = rememberCoroutineScope()
-    val context = LocalContext.current
-
-    fun fetchTokens() {
+    suspend fun fetchTokens() {
         isLoading = true
-        scope.launch {
-            val token = persistentStore.getToken() ?: return@launch onUnauthorized()
-            val baseUrl = persistentStore.getServerUrl()
+        val token = persistentStore.getToken() ?: return
+        val baseUrl = persistentStore.getServerUrl()
 
-            client.safeApiCall(
-                context = context,
-                builder = {
-                    method = HttpMethod.Get
-                    url("$baseUrl/api/otp-records/$otpRecordId/tokens")
-                    header("Authorization", "Bearer $token")
-                },
-                onUnauthorized = onUnauthorized,
-                serializer = { it.body<List<ApiAccessTokenDto>>() }
-            )?.let { fetchedTokens ->
-                tokens = fetchedTokens
-            }
-            isLoading = false
+        apiClient.safeApiCall(
+            builder = {
+                method = HttpMethod.Get
+                url("$baseUrl/api/http/otp-records/$otpRecordId/tokens")
+                header("Authorization", "Bearer $token")
+            },
+            serializer = { it.body<List<ApiAccessTokenDto>>() }
+        )?.let { fetchedTokens ->
+            tokens = fetchedTokens
         }
+        isLoading = false
     }
 
-    LaunchedEffect(otpRecordId) {
+    LaunchedEffect(Unit) {
         fetchTokens()
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Tokens for $otpRecordName") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
+    Box(modifier = Modifier.fillMaxSize()) {
+        PullToRefreshBox(
+            isRefreshing = isRefreshing,
+            onRefresh = {
+                scope.launch {
+                    isRefreshing = true
+                    fetchTokens()
+                    isRefreshing = false
                 }
-            )
-        },
-        floatingActionButton = {
-            FloatingActionButton(onClick = { showAddDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Add Token")
-            }
-        }
-    ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .padding(innerPadding)
-                .fillMaxSize()
+            },
+            modifier = Modifier.fillMaxSize()
         ) {
-            if (isLoading && tokens.isEmpty()) {
-                CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(tokens) { apiToken ->
-                        Card(modifier = Modifier.fillMaxWidth()) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) { // Left side for name and masked token
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(tokens) { apiToken ->
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) { // Left side for name and masked token
+                                Text(
+                                    apiToken.name,
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    apiToken.masked_token,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                                Text(
+                                    "Created: ${apiToken.created_at}",
+                                    style = MaterialTheme.typography.labelSmall
+                                )
+                                apiToken.last_used_at?.let {
                                     Text(
-                                        apiToken.name,
-                                        style = MaterialTheme.typography.titleMedium
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        apiToken.masked_token,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.secondary
-                                    )
-                                    Text(
-                                        "Created: ${apiToken.created_at}",
+                                        "Last used: $it",
                                         style = MaterialTheme.typography.labelSmall
                                     )
-                                    apiToken.last_used_at?.let {
-                                        Text(
-                                            "Last used: $it",
-                                            style = MaterialTheme.typography.labelSmall
-                                        )
-                                    }
+                                }
 
-                                }
-                                // Right side for delete button
-                                IconButton(onClick = {
-                                    scope.launch {
-                                        val token = persistentStore.getToken()
-                                            ?: return@launch onUnauthorized()
-                                        val baseUrl = persistentStore.getServerUrl()
-                                        client.safeApiCall(
-                                            context = context,
-                                            builder = {
-                                                method = HttpMethod.Delete
-                                                url("$baseUrl/api/otp-records/$otpRecordId/tokens/${apiToken.id}")
-                                                header("Authorization", "Bearer $token")
-                                            },
-                                            onUnauthorized = onUnauthorized,
-                                            successCode = HttpStatusCode.NoContent,
-                                            serializer = { /* no body */ }
-                                        )?.let {
-                                            fetchTokens()
-                                        }
+                            }
+                            // Right side for delete button
+                            IconButton(onClick = {
+                                scope.launch {
+                                    val token = persistentStore.getToken()
+                                        ?: return@launch
+                                    val baseUrl = persistentStore.getServerUrl()
+                                    apiClient.safeApiCall(
+                                        builder = {
+                                            method = HttpMethod.Delete
+                                            url("$baseUrl/api/http/otp-records/$otpRecordId/tokens/${apiToken.id}")
+                                            header("Authorization", "Bearer $token")
+                                        },
+                                        successCode = HttpStatusCode.NoContent,
+                                        serializer = { /* no body */ }
+                                    )?.let {
+                                        fetchTokens()
                                     }
-                                }) {
-                                    Icon(
-                                        Icons.Default.Delete,
-                                        contentDescription = "Delete",
-                                        tint = MaterialTheme.colorScheme.error
-                                    )
                                 }
+                            }) {
+                                Icon(
+                                    Icons.Default.Delete,
+                                    contentDescription = "Delete",
+                                    tint = MaterialTheme.colorScheme.error
+                                )
                             }
                         }
                     }
                 }
+
+                if (isLoading && !isRefreshing) {
+                    item {
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.padding(16.dp))
+                        }
+                    }
+                }
             }
+        }
+
+        FloatingActionButton(
+            onClick = { showAddDialog = true },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp)
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Add Token")
         }
     }
 
@@ -226,18 +222,16 @@ fun OtpRecordTokensScreen(
             confirmButton = {
                 Button(onClick = {
                     scope.launch {
-                        val token = persistentStore.getToken() ?: return@launch onUnauthorized()
+                        val token = persistentStore.getToken() ?: return@launch
                         val baseUrl = persistentStore.getServerUrl()
-                        client.safeApiCall(
-                            context = context,
+                        apiClient.safeApiCall(
                             builder = {
                                 method = HttpMethod.Post
-                                url("$baseUrl/api/otp-records/$otpRecordId/tokens")
+                                url("$baseUrl/api/http/otp-records/$otpRecordId/tokens")
                                 header("Authorization", "Bearer $token")
                                 contentType(ContentType.Application.Json)
                                 setBody(CreateTokenRequest(name))
                             },
-                            onUnauthorized = onUnauthorized,
                             successCode = HttpStatusCode.Created,
                             serializer = { it.body<CreateTokenResponse>() }
                         )?.let { response ->

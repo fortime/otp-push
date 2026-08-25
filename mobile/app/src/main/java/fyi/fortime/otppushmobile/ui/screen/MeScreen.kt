@@ -1,4 +1,4 @@
-package fyi.fortime.otppushmobile.ui.screens
+package fyi.fortime.otppushmobile.ui.screen
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -11,16 +11,19 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import fyi.fortime.otppushmobile.data.PersistentStore
+import fyi.fortime.otppushmobile.AppContext
+import kotlinx.coroutines.launch
 
 @Composable
-fun MeTab(
-    persistentStore: PersistentStore,
-    onLogout: () -> Unit
+fun MeScreen(
+    appContext: AppContext,
 ) {
+    val scope = rememberCoroutineScope()
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -32,17 +35,18 @@ fun MeTab(
         Spacer(modifier = Modifier.height(16.dp))
 
         Text(
-            "Email: ${persistentStore.getUser()?.email ?: "Unknown"}",
+            "Email: ${appContext.currentUser()?.email ?: "Unknown"}",
             style = MaterialTheme.typography.bodyLarge
         )
 
         Spacer(modifier = Modifier.height(32.dp))
 
         Button(
-            onClick = onLogout,
+            onClick = { scope.launch { appContext.logout() } },
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
         ) {
             Text("Logout")
         }
     }
 }
+
