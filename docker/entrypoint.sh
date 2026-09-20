@@ -2,8 +2,8 @@
 set -e
 
 # If using SQLite, ensure the parent directory and file exist
-if [[ $OTP_PUSH_SERVER_DATABASE_URL == sqlite://* ]]; then
-    DB_PATH="${OTP_PUSH_SERVER_DATABASE_URL#sqlite://}"
+if [[ $OTP_PUSH_SERVER_HTTP_DATABASE_URL == sqlite://* ]]; then
+    DB_PATH="${OTP_PUSH_SERVER_HTTP_DATABASE_URL#sqlite://}"
 
     # Handle the case where the URL might be sqlite: (relative) or sqlite:/// (absolute)
     # The prefix removal might leave a / for absolute paths.
@@ -23,8 +23,8 @@ fi
 
 # Run migrations
 echo "Running database migrations..."
-/usr/local/bin/migration up --database-url "$OTP_PUSH_SERVER_DATABASE_URL"
+/usr/local/bin/migration up --database-url "$OTP_PUSH_SERVER_HTTP_DATABASE_URL"
 
 # Start the server
 echo "Starting OTP Push Server..."
-exec /usr/local/bin/server -c /home/app/config.toml --database-url "$OTP_PUSH_SERVER_DATABASE_URL"
+exec /usr/local/bin/server -c /home/app/config.toml --database-url "$OTP_PUSH_SERVER_HTTP_DATABASE_URL"

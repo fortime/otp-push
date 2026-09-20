@@ -61,8 +61,8 @@ RUN chmod +x /usr/local/bin/entrypoint.sh \
 USER app
 
 # Default environment variables
-ENV OTP_PUSH_SERVER_LISTEN_ADDR=0.0.0.0:3000
-ENV OTP_PUSH_SERVER_DATABASE_URL=sqlite:///home/app/data/otp-push.db
+ENV OTP_PUSH_SERVER_COMMON_LISTEN_ADDR=0.0.0.0:3000
+ENV OTP_PUSH_SERVER_HTTP_DATABASE_URL=sqlite:///home/app/data/otp-push.db
 ENV RUST_LOG=info
 
 # Expose the default port
