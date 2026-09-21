@@ -700,19 +700,19 @@ impl BleServerBackground {
                 let mut response = None;
                 for (address, rx) in &mut context.responses {
                     // read from sent_devices only
-                    if context.sent_devices.contains(&address) {
-                        if let Ok(r) = rx.try_recv() {
-                            if r.request_id != request.0.request_id {
-                                tracing::error!(
-                                    "BLE Response for {} instead of {}",
-                                    r.request_id,
-                                    request.0.request_id
-                                );
-                                closeds.push(*address);
-                            } else {
-                                response = Some(r);
-                                break;
-                            }
+                    if context.sent_devices.contains(address)
+                        && let Ok(r) = rx.try_recv()
+                    {
+                        if r.request_id != request.0.request_id {
+                            tracing::error!(
+                                "BLE Response for {} instead of {}",
+                                r.request_id,
+                                request.0.request_id
+                            );
+                            closeds.push(*address);
+                        } else {
+                            response = Some(r);
+                            break;
                         }
                     }
                 }
@@ -1043,16 +1043,13 @@ async fn monitor_adapter(
     )?;
     loop {
         if let Some(event) = events.next().await {
-            match event {
-                AdapterEvent::PropertyChanged(AdapterProperty::Powered(p)) => {
-                    tracing::info!("Adapter[{name}] powered: {p}");
+            if let AdapterEvent::PropertyChanged(AdapterProperty::Powered(p)) = event {
+                tracing::info!("Adapter[{name}] powered: {p}");
 
-                    send_ble_server_manager_event(
-                        tx,
-                        BleServerManagerEvent::AdapterPowered(adapter.clone(), p),
-                    )?;
-                }
-                _ => {}
+                send_ble_server_manager_event(
+                    tx,
+                    BleServerManagerEvent::AdapterPowered(adapter.clone(), p),
+                )?;
             }
         } else {
             tracing::warn!("Adapter[{name}] has been removed");

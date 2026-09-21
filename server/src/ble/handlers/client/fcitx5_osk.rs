@@ -41,7 +41,10 @@ pub async fn request(
         None,
     )]];
 
-    let next_path = format!("/api/ble/client/otp/fcitx5-osk/request/{}", request.request_id);
+    let next_path = format!(
+        "/api/ble/client/otp/fcitx5-osk/request/{}",
+        request.request_id
+    );
     let next = if let Some(base) = &state.common_config.base_url {
         Some(format!("{}{}", base.trim_end_matches('/'), next_path))
     } else {
