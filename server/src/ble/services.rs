@@ -469,7 +469,7 @@ impl BleServerBackground {
                                             let _ = ble_server_tx
                                                 .send(BleServerEvent::ClientReady(address));
                                         }
-                                        Ok(vec![])
+                                        Ok(vec![b'\0'])
                                     }
                                     .boxed()
                                 }
