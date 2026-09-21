@@ -53,14 +53,6 @@ pub struct CliArgs {
     /// Enable ble otp push feature
     #[arg(long, default_missing_value = "true")]
     ble_enabled: Option<bool>,
-
-    /// BLE Device Name to connect to
-    #[arg(long)]
-    ble_device_name: Option<String>,
-
-    /// BLE scan timeout in seconds
-    #[arg(long)]
-    ble_scan_timeout_secs: Option<u64>,
 }
 
 impl CliArgs {
