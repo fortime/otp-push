@@ -213,7 +213,7 @@ class BleGattService : Service() {
                     }
                 }
                 for (address in unfoundDevices) {
-                    removeServer(address)
+                    removeServer(address, true)
                 }
 
                 if (serverDevices.isEmpty()) {
@@ -238,7 +238,7 @@ class BleGattService : Service() {
                     }
                 }
                 for (address in disconnectedDevices) {
-                    removeServer(address)
+                    removeServer(address, true)
                 }
             }
             event = withTimeoutOrNull(interval) {
@@ -349,7 +349,7 @@ class BleGattService : Service() {
             if (serverMode) {
                 removeClient(address)
             } else {
-                removeServer(address)
+                removeServer(address, true)
             }
         }
 
@@ -825,7 +825,7 @@ class BleGattService : Service() {
 
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     Log.e(LOG_TAG, "GATT connection failed: $status")
-                    removeServer(address)
+                    removeServer(address, false)
                     return
                 }
 
@@ -841,8 +841,7 @@ class BleGattService : Service() {
 
                     BluetoothProfile.STATE_DISCONNECTED -> {
                         Log.d(LOG_TAG, "Disconnected from $address")
-                        removeServer(address)
-                        lastConnecteds.remove(address)
+                        removeServer(address, true)
                         if (serverDevices.isEmpty()) {
                             // signal to startScanning
                             scope.launch {
@@ -862,7 +861,7 @@ class BleGattService : Service() {
 
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     Log.e(LOG_TAG, "Service discovery failed: $status")
-                    removeServer(address)
+                    removeServer(address, false)
                     return
                 }
 
@@ -1106,9 +1105,12 @@ class BleGattService : Service() {
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun removeServer(address: String) {
+    private fun removeServer(address: String, removeLastConnected: Boolean) {
         Log.d(LOG_TAG, "Remove server device[$address]")
         serverDevices.remove(address)?.gattConn?.close()
+        if (removeLastConnected) {
+            lastConnecteds.remove(address)
+        }
         sendBroadcast(intentManager.genBleDeviceRemovedBroadcastIntent(address))
     }
 
