@@ -86,7 +86,6 @@ impl Config {
 
         let mut figment = Figment::new();
 
-        // If a config file is provided via CLI or ENV, merge it
         if let Some(config_path) = args.config() {
             figment = figment.merge(Toml::file(config_path)).focus("common");
         }
@@ -98,10 +97,6 @@ impl Config {
         figment = figment.merge(Serialized::defaults(&args));
 
         let common: CommonConfig = figment.extract().map_err(Box::from)?;
-        eprintln!(
-            "ble: {:?}, http: {:?}",
-            common.ble_enabled, common.http_enabled
-        );
 
         let mut config = Config {
             common,

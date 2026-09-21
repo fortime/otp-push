@@ -94,7 +94,6 @@ impl Config {
     pub fn load(args: &CliArgs) -> Result<Self, Box<Error>> {
         let mut figment = Figment::new();
 
-        // If a config file is provided via CLI or ENV, merge it
         if let Some(config_path) = args.config() {
             figment = figment.merge(Toml::file(config_path)).focus("ble");
         }
