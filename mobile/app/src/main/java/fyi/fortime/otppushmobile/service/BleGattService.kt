@@ -918,7 +918,7 @@ class BleGattService : Service() {
                 status: Int,
             ) {
                 @Suppress("DEPRECATION")
-                onCharacteristicRead(gatt, characteristic, characteristic.value, status)
+                onCharacteristicRead(gatt, characteristic, characteristic.value ?: ByteArray(0), status)
             }
 
             @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -985,7 +985,7 @@ class BleGattService : Service() {
                 characteristic: BluetoothGattCharacteristic,
             ) {
                 @Suppress("DEPRECATION")
-                onCharacteristicChanged(gatt, characteristic, characteristic.value)
+                onCharacteristicChanged(gatt, characteristic, characteristic.value ?: ByteArray(0))
             }
 
             @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
@@ -1033,7 +1033,7 @@ class BleGattService : Service() {
                 status: Int,
             ) {
                 @Suppress("DEPRECATION")
-                onDescriptorRead(gatt, descriptor, status, descriptor.value)
+                onDescriptorRead(gatt, descriptor, status, descriptor.value ?: ByteArray(0))
             }
 
             @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
