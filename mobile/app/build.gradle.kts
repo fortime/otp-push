@@ -33,6 +33,9 @@ android {
             dimension = "environment"
             applicationIdSuffix = ".dev"
         }
+        create("prod") {
+            dimension = "environment"
+        }
     }
 
     buildTypes {
