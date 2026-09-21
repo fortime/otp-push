@@ -72,6 +72,7 @@ pub struct Config {
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct CommonConfig {
+    #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
     pub base_url: Option<String>,
     #[serde(default)]
@@ -114,4 +115,8 @@ impl Config {
 
         Ok(config)
     }
+}
+
+fn default_listen_addr() -> String {
+    "127.0.0.1:3000".to_string()
 }

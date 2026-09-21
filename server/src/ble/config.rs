@@ -38,7 +38,11 @@ pub enum BleMode {
 
 impl Default for BleMode {
     fn default() -> Self {
-        Self::Client(Default::default())
+        Self::Client(BleClientConfig {
+            gatt_service_uuid: default_client_gatt_service_uuid(),
+            gatt_request_char_uuid: default_client_gatt_request_char_uuid(),
+            gatt_response_char_uuid: default_client_gatt_response_char_uuid(),
+        })
     }
 }
 
