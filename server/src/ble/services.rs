@@ -8,7 +8,7 @@ use bluer::gatt::local::{
 use bluer::gatt::remote::Service as RemoteService;
 use bluer::{
     Adapter, AdapterEvent, AdapterProperty, Address, Device, DiscoveryFilter, DiscoveryTransport,
-    Session, SessionEvent,
+    Error as BluerError, Session, SessionEvent,
 };
 use chrono::Utc;
 use futures::{FutureExt as _, StreamExt};
@@ -208,6 +208,7 @@ impl BleClientManager {
         // filter by gatt service uuid
         adapter
             .set_discovery_filter(DiscoveryFilter {
+                uuids: [self.config.gatt_service_uuid].into(),
                 transport: DiscoveryTransport::Le,
                 ..Default::default()
             })
@@ -236,10 +237,17 @@ impl BleClientManager {
                                 };
                                 let name = device.alias().await.unwrap_or_else(|_| "Unknown".to_string());
                                 tracing::info!("Found whitelisted device: {name}/{addr}");
-                                if let Err(e) = device.connect().await {
+                                let connect_res: Result<(), BluerError> = async {
+                                    if !device.is_connected().await? {
+                                        device.connect().await?;
+                                    }
+                                    Ok(())
+                                }.await;
+                                if let Err(e) = connect_res {
                                     tracing::error!("Failed to connect to device[{name}]: {e:?}");
                                     continue;
                                 }
+                                // DiscoveryFilter doesn't guarantee the result. We check again
                                 match find_service(&device, &self.config.gatt_service_uuid).await {
                                     Ok(Some(_)) => {
                                         tracing::info!("Found device with service supported: {name}");
@@ -1124,9 +1132,11 @@ async fn find_service(
 ) -> Result<Option<RemoteService>, AppBleError> {
     let services = device.services().await?;
 
+    tracing::debug!("Searching service: {gatt_service_uuid}");
+
     for service in services {
         let uuid = service.uuid().await?;
-        tracing::debug!("Found uuid: {uuid}");
+        tracing::debug!("Found service: {uuid}");
         if uuid == *gatt_service_uuid {
             return Ok(Some(service));
         }
@@ -1161,12 +1171,12 @@ async fn send_request(
     let mut request_char = None;
     let mut response_char = None;
 
-    for char in chars {
-        let uuid = char.uuid().await?;
+    for c in chars {
+        let uuid = c.uuid().await?;
         if uuid == config.gatt_request_char_uuid {
-            request_char = Some(char);
+            request_char = Some(c);
         } else if uuid == config.gatt_response_char_uuid {
-            response_char = Some(char);
+            response_char = Some(c);
         }
     }
 
