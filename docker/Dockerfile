@@ -39,7 +39,7 @@ RUN touch -a -m  server/src/main.rs \
 FROM debian:bookworm-slim
 
 # Install runtime dependencies
-RUN apt-get update && apt-get install -y libsqlite3-0 libssl3 ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y libsqlite3-0 libssl3 ca-certificates libdbus-1-3 && rm -rf /var/lib/apt/lists/*
 
 # Create a non-root user for security
 RUN useradd -m app
