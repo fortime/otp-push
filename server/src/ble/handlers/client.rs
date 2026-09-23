@@ -9,7 +9,10 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use chrono::Utc;
-use common::{BleOtpRequest, BleOtpResponse, OtpRequestResponse, OtpRequestStatus, OtpResponse};
+use common::{
+    BleOtpRequest, BleOtpResponse, BleOtpResponseBody, OtpRequestResponse, OtpRequestStatus,
+    OtpResponse,
+};
 use uuid::Uuid;
 
 use crate::{
@@ -62,7 +65,7 @@ async fn send_request(state: SharedAppBleState, request: BleOtpRequest) {
                 request_id,
                 BleOtpResponse {
                     request_id,
-                    body: common::BleOtpResponseBody::Err {
+                    body: BleOtpResponseBody::Err {
                         message: e.to_string(),
                     },
                 },

@@ -4,12 +4,13 @@ use axum::{
     response::{IntoResponse, Response},
 };
 use sea_orm::{DbErr, TransactionError};
-use snafu::prelude::*;
+use snafu::{Backtrace, prelude::*};
+use tracing::Level;
 
 #[derive(Debug, Snafu)]
 pub enum AppHttpError {
     #[snafu(display("Database error: {source}"))]
-    DatabaseError { source: DbErr },
+    DatabaseError { source: DbErr, backtrace: Backtrace },
 
     #[snafu(display("Auth error: {message}"))]
     AuthError { message: String },
@@ -42,16 +43,20 @@ pub enum AppHttpError {
 impl IntoResponse for AppHttpError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            AppHttpError::DatabaseError { source } => {
-                tracing::error!(error = %source, "Database error");
+            AppHttpError::DatabaseError { source, backtrace } => {
+                if tracing::enabled!(Level::DEBUG) {
+                    tracing::error!("Database error: {source:?}, backtrace: {backtrace:#?}");
+                } else {
+                    tracing::error!("Database error: {source:?}");
+                }
                 (StatusCode::INTERNAL_SERVER_ERROR, source.to_string())
             }
             AppHttpError::AuthError { message } => {
-                tracing::warn!("Auth error: {}", message);
+                tracing::warn!("Auth error: {message}");
                 (StatusCode::UNAUTHORIZED, message.clone())
             }
             AppHttpError::GoogleAuthError { message } => {
-                tracing::warn!("Google OAuth error: {}", message);
+                tracing::warn!("Google OAuth error: {message}");
                 (StatusCode::UNAUTHORIZED, message.clone())
             }
             AppHttpError::UserDisabled => {
@@ -59,19 +64,19 @@ impl IntoResponse for AppHttpError {
                 (StatusCode::FORBIDDEN, "User is disabled".to_string())
             }
             AppHttpError::NotFound { message } => {
-                tracing::warn!("Not found: {}", message);
+                tracing::warn!("Not found: {message}");
                 (StatusCode::NOT_FOUND, message.clone())
             }
             AppHttpError::DeviceConflict { message } => {
-                tracing::warn!("Device conflict: {}", message);
+                tracing::warn!("Device conflict: {message}");
                 (StatusCode::CONFLICT, message.clone())
             }
             AppHttpError::LimitExceeded { message } => {
-                tracing::warn!("Limit exceeded: {}", message);
+                tracing::warn!("Limit exceeded: {message}");
                 (StatusCode::CONFLICT, message.clone())
             }
             AppHttpError::BadRequest { message } => {
-                tracing::warn!("Bad request: {}", message);
+                tracing::warn!("Bad request: {message}");
                 (StatusCode::BAD_REQUEST, message.clone())
             }
             AppHttpError::SelfModificationForbidden => {
@@ -82,7 +87,7 @@ impl IntoResponse for AppHttpError {
                 )
             }
             AppHttpError::Internal { message } => {
-                tracing::error!("Internal server error: {}", message);
+                tracing::error!("Internal server error: {message}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),
@@ -100,7 +105,10 @@ impl IntoResponse for AppHttpError {
 
 impl From<DbErr> for AppHttpError {
     fn from(source: DbErr) -> Self {
-        AppHttpError::DatabaseError { source }
+        AppHttpError::DatabaseError {
+            source,
+            backtrace: Backtrace::capture(),
+        }
     }
 }
 

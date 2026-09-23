@@ -6,9 +6,15 @@ use crate::{ble::error::AppBleError, http::error::AppHttpError};
 #[snafu(visibility(pub))]
 pub enum AppError {
     #[snafu(display("App ble module error: {source}"))]
-    Ble { source: AppBleError },
+    Ble {
+        #[snafu(backtrace)]
+        source: AppBleError,
+    },
     #[snafu(display("App http module error: {source}"))]
-    Http { source: AppHttpError },
+    Http {
+        #[snafu(backtrace)]
+        source: AppHttpError,
+    },
     #[snafu(display("Startup error: {message}"))]
     Startup { message: String },
 }

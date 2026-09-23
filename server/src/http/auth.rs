@@ -104,8 +104,7 @@ pub async fn auth_middleware(
 
     let user = user::Entity::find_by_id(token_data.claims.sub)
         .one(&state.db)
-        .await
-        .map_err(|e| AppHttpError::DatabaseError { source: e })?
+        .await?
         .ok_or(AppHttpError::AuthError {
             message: "User not found".to_string(),
         })?;
@@ -193,8 +192,7 @@ where
         let token_model = api_access_token::Entity::find()
             .filter(api_access_token::Column::TokenHash.eq(token))
             .one(&state.db)
-            .await
-            .map_err(|e| AppHttpError::DatabaseError { source: e })?
+            .await?
             .ok_or(AppHttpError::AuthError {
                 message: "Invalid API token".to_string(),
             })?;

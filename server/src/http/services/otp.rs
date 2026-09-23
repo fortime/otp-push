@@ -3,7 +3,7 @@ use std::time::Duration;
 
 use chrono::{TimeDelta, Utc};
 use common::OtpRequestStatus;
-use fcm_service::{FcmMessage, FcmNotification, Target};
+use fcm_service::{FcmMessage, Target};
 use sea_orm::{
     ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, EntityTrait, QueryFilter,
 };
@@ -57,20 +57,9 @@ pub async fn create_otp_request(
             .all(&state.db)
             .await?;
 
-        let id_str = result.id.to_string();
-        let short_id = if id_str.len() >= 6 {
-            &id_str[id_str.len() - 6..]
-        } else {
-            &id_str
-        };
-
         for d in devices {
-            let mut notification = FcmNotification::new();
-            notification.set_title(format!("OTP Request (#{}): {}", short_id, record.name));
-            notification.set_body(format!("New request for {}", record.service_identifier));
-
+            // Send Data Message
             let mut message = FcmMessage::new();
-            message.set_notification(Some(notification));
             message.set_target(Target::Token(d.fcm_token));
 
             let mut data = HashMap::new();

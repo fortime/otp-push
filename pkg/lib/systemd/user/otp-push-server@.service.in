@@ -3,6 +3,7 @@ Description=A service for requesting otp code
 After=bluetooth.service
 
 [Service]
+Environment=RUST_LOG=info
 ExecStart=@INSTALL_BIN_DIR@/otp-push-server --ble-enabled=true --http-enabled=false --config="%E/otp-push-server/%i.toml"
 Restart=on-failure
 

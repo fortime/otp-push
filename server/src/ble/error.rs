@@ -4,12 +4,17 @@ use axum::{
 };
 use bluer::Error as BluerError;
 use reqwest::StatusCode;
-use snafu::Snafu;
+use snafu::{Backtrace, Snafu};
+use tracing::Level;
 
 #[derive(Debug, Snafu)]
 pub enum AppBleError {
     #[snafu(display("Bluer error: {source}"))]
-    BluerError { source: BluerError },
+    BluerError {
+        source: BluerError,
+        #[snafu(backtrace)]
+        backtrace: Backtrace,
+    },
 
     #[snafu(display("Bad request: {message}"))]
     BadRequest { message: String },
@@ -24,20 +29,24 @@ pub enum AppBleError {
 impl IntoResponse for AppBleError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            AppBleError::BluerError { source } => {
-                tracing::error!("Bluer error: {:?}", source);
+            AppBleError::BluerError { source, backtrace } => {
+                if tracing::enabled!(Level::DEBUG) {
+                    tracing::error!("Bluer error: {source:?}, backtrace: {backtrace:#?}");
+                } else {
+                    tracing::error!("Bluer error: {source:?}");
+                }
                 (StatusCode::INTERNAL_SERVER_ERROR, "Bluer error".to_string())
             }
             AppBleError::BadRequest { message } => {
-                tracing::warn!("Bad request: {}", message);
+                tracing::warn!("Bad request: {message}");
                 (StatusCode::BAD_REQUEST, message.clone())
             }
             AppBleError::BadGateway { message } => {
-                tracing::warn!("Bad gateway: {}", message);
+                tracing::warn!("Bad gateway: {message}");
                 (StatusCode::BAD_GATEWAY, message.clone())
             }
             AppBleError::Internal { message } => {
-                tracing::error!("Internal server error: {}", message);
+                tracing::error!("Internal server error: {message}");
                 (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     "Internal server error".to_string(),
@@ -55,6 +64,9 @@ impl IntoResponse for AppBleError {
 
 impl From<BluerError> for AppBleError {
     fn from(source: BluerError) -> Self {
-        AppBleError::BluerError { source }
+        AppBleError::BluerError {
+            source,
+            backtrace: Backtrace::capture(),
+        }
     }
 }
