@@ -231,7 +231,7 @@ impl BleClientManager {
                                 let device = match adapter.device(addr) {
                                     Ok(d) => d,
                                     Err(e) => {
-                                        tracing::error!("Invalid device adress[{addr}]: {e:?}");
+                                        tracing::error!("Invalid device address[{addr}]: {e:?}");
                                         continue;
                                     },
                                 };
@@ -361,7 +361,7 @@ impl BleServerRequestContext {
         self.current_request_tx
             .send(None)
             .map_err(|_| AppBleError::Internal {
-                message: "Unabled to update current request".to_string(),
+                message: "Unable to update current request".to_string(),
             })?;
         Ok(())
     }
@@ -435,7 +435,7 @@ impl BleServerBackground {
                                             }
                                         }
                                         if current_request_rx.changed().await.is_err() {
-                                            tracing::error!("Unabled to wait the change of current request");
+                                            tracing::error!("Unable to wait the change of current request");
                                             return Ok("{}".as_bytes().to_vec());
                                         }
                                     }
@@ -629,7 +629,7 @@ impl BleServerBackground {
                             buf[0..HEADER_LEN].copy_from_slice(&len.to_be_bytes());
                             context.current_request_tx.send(Some(buf)).map_err(|_| {
                                 AppBleError::Internal {
-                                    message: "Unabled to update current request".to_string(),
+                                    message: "Unable to update current request".to_string(),
                                 }
                             })?;
                         }

@@ -295,7 +295,7 @@ class BleGattService : Service() {
     )
     @Synchronized
     fun stop() {
-        Log.i(LOG_TAG, "Stoping service")
+        Log.i(LOG_TAG, "Stopping service")
         if (started) {
             started = false
             if (serverMode) {
